@@ -1,0 +1,7 @@
+services:
+  turn:
+    ports:
+      - '${SYNC_TURN_BIND_ADDRESS:-127.0.0.1}:${SYNC_TURN_TLS_BIND_PORT:-5349}:${SYNC_TURN_TLS_PORT:-5349}/tcp'
+    volumes:
+      - '${SYNC_TURN_CERT_PATH:?absolute certificate path required}:/certs/fullchain.pem:ro'
+      - '${SYNC_TURN_KEY_PATH:?absolute private key path required}:/certs/privkey.pem:ro'

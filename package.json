@@ -1,0 +1,55 @@
+{
+  "name": "sync-api-nest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sync OIDC BFF, trusted-device API, and WebRTC signaling service.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:web": "npm --prefix web run build",
+    "build:all": "npm run build:web && npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "npm run typecheck",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "start:dev": "node --env-file-if-exists=.env -r ts-node/register src/main.ts",
+    "db:migrate": "node --env-file-if-exists=.env -r ts-node/register src/database/migrate.ts",
+    "test": "jest --runInBand",
+    "test:integration": "SYNC_INTEGRATION_TESTS=1 jest --runInBand test/integration.spec.ts",
+    "test:system": "node test/system/sync-system.mjs"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.26",
+    "@nestjs/core": "11.1.26",
+    "@nestjs/platform-express": "11.1.26",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.14.2",
+    "ioredis": "5.8.2",
+    "jose": "5.10.0",
+    "pg": "8.16.3",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "11.1.26",
+    "@types/express": "5.0.5",
+    "@types/jest": "29.5.14",
+    "@types/node": "22.19.0",
+    "@types/pg": "8.15.6",
+    "@types/supertest": "6.0.3",
+    "@types/ws": "8.18.1",
+    "jest": "29.7.0",
+    "supertest": "7.1.4",
+    "ts-jest": "29.4.5",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@nestjs/platform-express": {
+      "multer": "2.5.0"
+    }
+  }
+}

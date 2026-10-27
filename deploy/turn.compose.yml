@@ -1,0 +1,19 @@
+name: sync-turn-dev
+services:
+  turn:
+    image: ${SYNC_TURN_IMAGE:-coturn/coturn@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3}
+    container_name: sync-turn-dev
+    user: '0:0'
+    command: ['-c', '/etc/coturn/turnserver.conf']
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    tmpfs: ['/tmp']
+    ports:
+      - '${SYNC_TURN_BIND_ADDRESS:-127.0.0.1}:${SYNC_TURN_PORT:-3478}:${SYNC_TURN_PORT:-3478}/udp'
+      - '${SYNC_TURN_BIND_ADDRESS:-127.0.0.1}:${SYNC_TURN_PORT:-3478}:${SYNC_TURN_PORT:-3478}/tcp'
+      - '${SYNC_TURN_BIND_ADDRESS:-127.0.0.1}:${SYNC_TURN_MIN_PORT:-49160}-${SYNC_TURN_MAX_PORT:-49200}:${SYNC_TURN_MIN_PORT:-49160}-${SYNC_TURN_MAX_PORT:-49200}/udp'
+    volumes:
+      - ./.state/turnserver.conf:/etc/coturn/turnserver.conf:ro

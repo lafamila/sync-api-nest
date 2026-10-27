@@ -1,0 +1,6 @@
+dist/
+artifacts/
+node_modules/
+playwright-report/
+test-results/
+test-results-real/

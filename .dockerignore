@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.env
+.env.*
+!.env.example
+node_modules
+dist
+coverage
+web/node_modules
+web/dist
+*.log
+Dockerfile
