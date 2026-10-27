@@ -19,10 +19,16 @@ export class OidcStartDto {
 export class OidcCompleteDto {
   @IsString()
   @MinLength(32)
+  @MaxLength(128)
   transactionId!: string;
 
   @IsString()
   @MinLength(32)
   @MaxLength(128)
   verifier!: string;
+
+  @IsString()
+  @MinLength(32)
+  @MaxLength(128)
+  handoffCode!: string;
 }

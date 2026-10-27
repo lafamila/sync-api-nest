@@ -16,8 +16,7 @@
       "clientId": "sync-api",
       "clientType": "confidential",
       "redirectUris": [
-        "http://localhost:3053/api/session/oidc/callback",
-        "https://sync.lafamila.xyz/api/session/oidc/callback"
+        "http://localhost:3053/api/session/oidc/callback"
       ],
       "allowedScopes": [
         "openid",

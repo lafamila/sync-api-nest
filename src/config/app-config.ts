@@ -26,6 +26,9 @@ export interface SyncConfig {
   authRecheckSeconds: number;
   authHttpTimeoutMs: number;
   loginTransactionTtlSeconds: number;
+  nativeHandoffTtlSeconds: number;
+  loginRatePerIp: number;
+  loginRateGlobal: number;
   deviceChallengeTtlSeconds: number;
   modeDefaultTtlSeconds: number;
   modeMaxTtlSeconds: number;
@@ -73,6 +76,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SyncConfig {
     authRecheckSeconds: integer(env.SYNC_AUTH_RECHECK_SECONDS, 20, 10, 300),
     authHttpTimeoutMs: integer(env.SYNC_AUTH_HTTP_TIMEOUT_MS, 5_000, 500, 30_000),
     loginTransactionTtlSeconds: integer(env.SYNC_LOGIN_TRANSACTION_TTL_SECONDS, 300, 60, 900),
+    nativeHandoffTtlSeconds: integer(env.SYNC_NATIVE_HANDOFF_TTL_SECONDS, 60, 15, 120),
+    loginRatePerIp: integer(env.SYNC_LOGIN_RATE_PER_IP, 20, 3, 300),
+    loginRateGlobal: integer(env.SYNC_LOGIN_RATE_GLOBAL, 120, 10, 3000),
     deviceChallengeTtlSeconds: integer(env.SYNC_DEVICE_CHALLENGE_TTL_SECONDS, 120, 30, 600),
     modeDefaultTtlSeconds: integer(env.SYNC_MODE_DEFAULT_TTL_SECONDS, 43_200, 300, 86_400),
     modeMaxTtlSeconds: integer(env.SYNC_MODE_MAX_TTL_SECONDS, 86_400, 300, 604_800),

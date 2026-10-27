@@ -18,7 +18,7 @@
     "db:migrate": "node --env-file-if-exists=.env -r ts-node/register src/database/migrate.ts",
     "test": "jest --runInBand",
     "test:integration": "SYNC_INTEGRATION_TESTS=1 jest --runInBand test/integration.spec.ts",
-    "test:system": "node test/system/sync-system.mjs"
+    "test:system": "npm run build:all && node test/system/sync-system.mjs"
   },
   "dependencies": {
     "@nestjs/common": "11.1.26",

@@ -19,13 +19,13 @@ export class SessionController {
   @Post('oidc/start')
   async start(@Body() input: OidcStartDto, @Req() request: Request, @Res({passthrough:true}) response:Response) {
     if (input.platform === 'web') this.security.assertPublicWebOrigin(request);
-    return this.startResponse(input,response);
+    return this.startResponse(input,request,response);
   }
 
   @Get('oidc/start')
   async startGet(@Query() input: OidcStartDto, @Req() request: Request, @Res({passthrough:true}) response:Response) {
     if (input.platform === 'web') this.security.assertPublicWebOrigin(request);
-    return this.startResponse(input,response);
+    return this.startResponse(input,request,response);
   }
 
   @Get('oidc/callback')
@@ -54,10 +54,13 @@ export class SessionController {
     }
     const target = new URL('sync://auth');
     target.searchParams.set('transactionId', result.transactionId);
+    if (result.handoffCode) target.searchParams.set('handoffCode', result.handoffCode);
+    if (result.error) target.searchParams.set('error', 'authentication_failed');
     response.redirect(target.toString());
   }
 
-  private async startResponse(input:OidcStartDto,response:Response) {
+  private async startResponse(input:OidcStartDto,request:Request,response:Response) {
+    await this.sessions.assertStartAllowed(request.ip ?? request.socket.remoteAddress ?? 'unknown');
     const result=await this.sessions.start(input);
     if(result.browserBinding) response.cookie(result.browserBinding.name,result.browserBinding.value,{
       httpOnly:true,secure:this.config.config.nodeEnv==='production',sameSite:'lax',

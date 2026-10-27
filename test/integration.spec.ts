@@ -78,8 +78,12 @@ integration('PostgreSQL and Redis security integration', () => {
     const state=new URL(started.authorizeUrl).searchParams.get('state')!;
     const callback=await service.callback({code:'authorization-code',state});
     expect(callback).toMatchObject({platform:'ios',transactionId:started.transactionId});
-    await expect(service.complete({transactionId:started.transactionId,verifier:'wrong-verifier-that-is-long-enough'})).rejects.toThrow();
-    const completed=await service.complete({transactionId:started.transactionId,verifier});
+    const handoffCode=callback.handoffCode!;
+    expect(handoffCode).toBeTruthy();
+    await expect(service.complete({transactionId:started.transactionId,verifier:'wrong-verifier-that-is-long-enough',handoffCode})).rejects.toThrow();
+    await expect(service.complete({transactionId:started.transactionId,verifier,handoffCode:''})).rejects.toThrow();
+    await expect(service.complete({transactionId:started.transactionId,verifier,handoffCode:'incorrect-callback-code-that-is-long-enough'})).rejects.toThrow();
+    const completed=await service.complete({transactionId:started.transactionId,verifier,handoffCode});
     expect(completed.account).toEqual(account);
     expect(completed.sessionId).not.toContain('provider');
     await db.query(`update sync_auth_sessions set auth_checked_at=now()-interval '1 minute' where token_hash=$1`,[sha256(completed.sessionId)]);
@@ -87,10 +91,30 @@ integration('PostgreSQL and Redis security integration', () => {
     await Promise.all(Array.from({length:8},(_,index)=>(index%2===0?service:secondProcess)
       .requireRequest({headers:{'x-sync-session':completed.sessionId}} as never)));
     expect(auth.refresh).toHaveBeenCalledTimes(1);
-    await expect(service.complete({transactionId:started.transactionId,verifier})).rejects.toThrow();
+    await expect(service.complete({transactionId:started.transactionId,verifier,handoffCode})).rejects.toThrow();
     const stored=await db.query<{access_token_encrypted:string;refresh_token_encrypted:string}>('select access_token_encrypted,refresh_token_encrypted from sync_auth_sessions limit 1');
     expect(stored.rows[0]?.access_token_encrypted).not.toContain('provider-access');
     expect(stored.rows[0]?.refresh_token_encrypted).not.toContain('provider-refresh');
+  });
+
+  it('keeps browser and native session credentials in their issued transport', async()=>{
+    const webToken=randomOpaque(48);
+    const nativeToken=randomOpaque(48);
+    for(const [token,platform] of [[webToken,'web'],[nativeToken,'ios']] as const) {
+      await sessionRepository.create({token,csrfToken:randomOpaque(),account,platform,
+        accessToken:'fixture-access',refreshToken:'fixture-refresh',accessTokenExpiresAt:new Date(Date.now()+900_000)});
+    }
+    await expect(sessionRepository.findByToken(webToken,'web')).resolves.toBeDefined();
+    await expect(sessionRepository.findByToken(webToken,'native')).resolves.toBeUndefined();
+    await expect(sessionRepository.findByToken(nativeToken,'native')).resolves.toBeDefined();
+    await expect(sessionRepository.findByToken(nativeToken,'web')).resolves.toBeUndefined();
+  });
+
+  it('bounds login initiation per client before allocating transactions', async()=>{
+    const service=new SessionService(configService,redis,{} as AuthService,sessionRepository,revocations);
+    const address=`fixture-${randomUUID()}`;
+    for(let count=0;count<configService.config.loginRatePerIp;count++) await service.assertStartAllowed(address);
+    await expect(service.assertStartAllowed(address)).rejects.toThrow('Too many login attempts');
   });
 
   it('verifies P-256 SPKI registration, consumes nonce once, and enforces ownership', async()=>{

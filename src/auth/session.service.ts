@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Request } from 'express';
 import { decrypt, randomOpaque, safeEqual, sha256 } from '../common/crypto';
@@ -14,6 +14,8 @@ interface LoginTransaction {
   id: string; state: string; oidcVerifier: string; platform: 'web' | 'macos' | 'ios';
   appChallenge?: string; status: 'pending' | 'processing' | 'completed' | 'failed';
   browserBindingHash?: string;
+  handoffCodeHash?: string;
+  handoffExpiresAt?: number;
   sessionToken?: string; csrfToken?: string; error?: string;
 }
 
@@ -23,6 +25,7 @@ export interface CallbackResult {
   sessionToken?: string;
   csrfToken?: string;
   error?: string;
+  handoffCode?: string;
 }
 
 @Injectable()
@@ -35,6 +38,19 @@ export class SessionService {
     private readonly repository: SessionRepository,
     private readonly revocations: RevocationBusService,
   ) {}
+
+  async assertStartAllowed(clientAddress: string): Promise<void> {
+    const bucket = String(Math.floor(Date.now() / 60_000));
+    const allowed = await this.redis.client.eval(
+      `local perIp=redis.call('INCR',KEYS[1]); redis.call('EXPIRE',KEYS[1],120);
+       if perIp > tonumber(ARGV[1]) then return 0 end;
+       local total=redis.call('INCR',KEYS[2]); redis.call('EXPIRE',KEYS[2],120);
+       if total > tonumber(ARGV[2]) then return 0 end; return 1`,
+      2, this.redis.key('login-rate', bucket, sha256(clientAddress)), this.redis.key('login-rate-global', bucket),
+      String(this.config.config.loginRatePerIp), String(this.config.config.loginRateGlobal),
+    );
+    if (Number(allowed) !== 1) throw new HttpException('Too many login attempts; try again shortly', HttpStatus.TOO_MANY_REQUESTS);
+  }
 
   async start(input: OidcStartDto): Promise<{ authorizeUrl: string; transactionId: string; browserBinding?: { name:string; value:string } }> {
     this.auth.assertConfigured();
@@ -105,9 +121,15 @@ export class SessionService {
         accessTokenExpiresAt: new Date(Date.now() + token.expires_in! * 1000),
       });
       tx.status = 'completed'; tx.sessionToken = sessionToken; tx.csrfToken = csrfToken;
-      if (tx.platform === 'web') await this.redis.client.del(this.txKey(tx.id));
-      else await this.saveTransaction(tx);
-      return { platform: tx.platform, transactionId: tx.id, sessionToken, csrfToken };
+      if (tx.platform === 'web') {
+        await this.redis.client.del(this.txKey(tx.id));
+        return { platform: tx.platform, transactionId: tx.id, sessionToken, csrfToken };
+      }
+      const handoffCode = randomOpaque();
+      tx.handoffCodeHash = sha256(handoffCode);
+      tx.handoffExpiresAt = Date.now() + this.config.config.nativeHandoffTtlSeconds * 1000;
+      await this.saveTransaction(tx);
+      return { platform: tx.platform, transactionId: tx.id, handoffCode };
     } catch (error) {
       tx.status = 'failed'; tx.error = error instanceof Error ? error.message : 'Login failed';
       await this.saveTransaction(tx);
@@ -116,14 +138,16 @@ export class SessionService {
   }
 
   async complete(input: OidcCompleteDto): Promise<{ sessionId: string; account: { id: string; name: string; permission: string } }> {
+    if (!input.handoffCode) throw new UnauthorizedException('Native callback code is required');
     const challenge = sha256(input.verifier);
     const raw = await this.redis.client.eval(
       `local raw=redis.call('GET',KEYS[1]); if not raw then return nil end; local obj=cjson.decode(raw);
-       if obj.status ~= 'completed' or obj.platform == 'web' or obj.appChallenge ~= ARGV[1] then return nil end;
+       if obj.status ~= 'completed' or obj.platform == 'web' or obj.appChallenge ~= ARGV[1]
+         or obj.handoffCodeHash ~= ARGV[2] or not obj.handoffExpiresAt or obj.handoffExpiresAt < tonumber(ARGV[3]) then return nil end;
        redis.call('DEL',KEYS[1]); return raw`,
-      1, this.txKey(input.transactionId), challenge,
+      1, this.txKey(input.transactionId), challenge, sha256(input.handoffCode), String(Date.now()),
     ) as string | null;
-    if (!raw) throw new UnauthorizedException('Native login verifier is invalid, expired, or already used');
+    if (!raw) throw new UnauthorizedException('Native login callback authorization is invalid, expired, or already used');
     const tx = JSON.parse(raw) as LoginTransaction;
     const session = await this.requireToken(tx.sessionToken!, 'native');
     return { sessionId: tx.sessionToken!, account: session.account };

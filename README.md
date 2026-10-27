@@ -54,7 +54,7 @@ All routes use `/api`. Browser auth uses the HttpOnly `sync_session` cookie and 
 - `GET|DELETE /api/sessions[/sessionId]`
 - `POST /api/signaling/tickets`, `GET /api/ice`
 
-Native login has two independent S256 bindings: provider PKCE between Sync and auth, plus the app's `challenge=base64url(SHA256(verifier))`. The provider callback returns only `sync://auth?transactionId=...`; the initiating app must present the verifier once at `/api/session/oidc/complete` to receive its opaque session.
+Native login uses provider PKCE plus the app's `challenge=base64url(SHA256(verifier))`. Successful callbacks return `sync://auth?transactionId=...&handoffCode=...`. Completion requires both the initiating app verifier and this callback-only one-use code, which expires after 60 seconds by default. Start responses never disclose the callback code. Browser cookies and native header sessions are bound to their issued platform in storage. Login initiation has per-client and global rate limits configured by `SYNC_LOGIN_RATE_PER_IP` and `SYNC_LOGIN_RATE_GLOBAL`.
 
 Device public keys are base64 P-256 SPKI DER. Signatures are base64 ASN.1 DER ECDSA-SHA256 over exactly:
 

@@ -228,7 +228,13 @@ async function nativeLogin(apiBase) {
   const completedCallback=await fetch(callback,{redirect:'manual'});
   assert.equal(completedCallback.status,302);
   assert.match(completedCallback.headers.get('location') ?? '',/^sync:\/\/auth\?transactionId=/);
-  const completed=await apiJson(apiBase,'/api/session/oidc/complete',{method:'POST',body:{transactionId:started.transactionId,verifier}});
+  const appCallback=new URL(completedCallback.headers.get('location'));
+  const handoffCode=appCallback.searchParams.get('handoffCode');
+  assert(handoffCode,'Native callback must contain a one-time completion code');
+  const missingCode=await fetch(`${apiBase}/api/session/oidc/complete`,{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({transactionId:started.transactionId,verifier})});
+  assert.equal(missingCode.status,400,'Callback code is required for native completion');
+  const completed=await apiJson(apiBase,'/api/session/oidc/complete',{method:'POST',body:{transactionId:started.transactionId,verifier,handoffCode}});
   assert.equal(completed.account.id,accountId);
   return completed;
 }

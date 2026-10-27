@@ -48,7 +48,8 @@ export class SessionRepository {
   async findByToken(token: string, source: 'web' | 'native'): Promise<StoredSession | undefined> {
     const result = await this.db.query<SessionRow>(
       `select * from sync_auth_sessions
-       where token_hash=$1 and revoked_at is null and expires_at > now()`, [sha256(token)],
+       where token_hash=$1 and revoked_at is null and expires_at > now()
+       and (($2='web' and platform='web') or ($2='native' and platform in ('macos','ios')))`, [sha256(token), source],
     );
     const row = result.rows[0];
     return row ? mapSession(row, token, source) : undefined;
