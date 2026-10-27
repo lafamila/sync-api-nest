@@ -26,6 +26,7 @@ export class SignalingService implements OnModuleDestroy {
   private readonly unsubscribe: () => void;
   private readonly interval: NodeJS.Timeout;
   private maintaining=false;
+  private stopping=false;
 
   constructor(
     private readonly tickets:TicketService,
@@ -51,15 +52,16 @@ export class SignalingService implements OnModuleDestroy {
   }
 
   async onModuleDestroy():Promise<void> {
+    this.stopping=true;
     clearInterval(this.interval);
     await this.sessions.endForInstance(this.identity.namespace,this.identity.instanceId,'server_shutdown').catch(()=>this.failClosed('server_shutdown'));
     this.unsubscribe();
-    const connections=[...this.devices.values(),...this.controllers.values()];
-    for(const entry of connections) entry.socket.close(1012,'server shutdown');
+    const sockets=this.server ? [...this.server.clients] : [...this.devices.values(),...this.controllers.values()].map((entry)=>entry.socket);
+    for(const socket of sockets) socket.close(1012,'server shutdown');
     if(!this.server) return;
     const closed=new Promise<void>((resolve)=>this.server!.close(()=>resolve()));
     const deadline=setTimeout(()=>{
-      for(const entry of connections) if(entry.socket.readyState!==WebSocket.CLOSED) entry.socket.terminate();
+      for(const socket of this.server?.clients ?? []) if(socket.readyState!==WebSocket.CLOSED) socket.terminate();
     },2_000);
     deadline.unref();
     await closed;
@@ -67,6 +69,7 @@ export class SignalingService implements OnModuleDestroy {
   }
 
   private async accept(socket:WebSocket,request:IncomingMessage):Promise<void> {
+    if(this.stopping) return this.reject(socket,'server shutdown');
     try {
       const url=new URL(request.url ?? '', 'http://localhost');
       const token=url.searchParams.get('ticket');
@@ -91,6 +94,7 @@ export class SignalingService implements OnModuleDestroy {
     await this.authSessions.revalidateById(ticket.authSessionId);
     const device=await this.deviceRepository.findOwned(ticket.ownerAccountId,ticket.deviceId);
     if(!device) throw new Error('device revoked');
+    if(this.stopping || connection.socket.readyState!==WebSocket.OPEN) throw new Error('server shutdown');
     const previous=this.devices.get(device.id);
     this.devices.set(device.id,connection);
     await this.redis.client.set(this.presenceKey(device.id),connection.id,'EX',30);
@@ -110,6 +114,7 @@ export class SignalingService implements OnModuleDestroy {
     const session=await this.sessions.findActive(ticket.sessionId);
     if(!session || session.ownerAccountId!==ticket.ownerAccountId || session.authSessionId!==ticket.authSessionId) throw new Error('session invalid');
     if(!await this.modeMatches(session)) { await this.sessions.endIfActive(session.ownerAccountId,session.id,'mode_invalid'); throw new Error('mode invalid'); }
+    if(this.stopping || connection.socket.readyState!==WebSocket.OPEN) throw new Error('server shutdown');
     const previous=this.controllers.get(session.id);
     this.controllers.set(session.id,connection);
     this.sessionHosts.set(session.id,session.hostId);
@@ -120,6 +125,7 @@ export class SignalingService implements OnModuleDestroy {
   }
 
   private async message(connection:Connection,data:RawData,isBinary:boolean):Promise<void> {
+    if(this.stopping) return this.reject(connection.socket,'server shutdown');
     if(isBinary) return this.reject(connection.socket,'binary messages are not supported');
     let value:unknown;
     try { value=JSON.parse(data.toString()); } catch { return this.reject(connection.socket,'invalid json'); }

@@ -11,6 +11,27 @@ interface FakeSocket {
 }
 
 describe('SignalingService fail-closed maintenance',()=>{
+  it('drains replaced sockets that are no longer in current connection maps',async()=>{
+    jest.useFakeTimers();
+    const service=createService({},{});
+    const replaced=socket();
+    const clients=new Set([replaced]);
+    let didClose:(()=>void)|undefined;
+    replaced.terminate.mockImplementation(()=>{
+      replaced.readyState=WebSocket.CLOSED;
+      clients.delete(replaced);
+      didClose?.();
+    });
+    Object.assign(service,{server:{clients,close:(callback:()=>void)=>{didClose=callback;}}});
+    try {
+      const closing=service.onModuleDestroy();
+      await jest.advanceTimersByTimeAsync(2_000);
+      await closing;
+      expect(replaced.close).toHaveBeenCalledWith(1012,'server shutdown');
+      expect(replaced.terminate).toHaveBeenCalledTimes(1);
+    } finally { jest.useRealTimers(); }
+  });
+
   it('notifies both local peers and closes every socket when dependency checks are uncertain',async()=>{
     const sessions={endExpired:jest.fn().mockRejectedValue(new Error('database unavailable'))};
     const service=createService(sessions,{});

@@ -9,7 +9,7 @@ import { SyncConfigService } from './config/config.service';
 import { SignalingService } from './signaling/signaling.service';
 
 async function bootstrap():Promise<void> {
-  const app=await NestFactory.create(AppModule,{bufferLogs:true});
+  const app=await NestFactory.create(AppModule,{bufferLogs:true,forceCloseConnections:true});
   const config=app.get(SyncConfigService);
   app.enableShutdownHooks();
   app.setGlobalPrefix('api');
