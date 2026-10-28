@@ -33,8 +33,10 @@ export class RemoteSessionService implements OnModuleInit, OnModuleDestroy {
   findActiveForHost(hostId: string) { return this.repository.findActiveForHost(hostId); }
   async endOwned(ownerId: string, id: string, reason: string): Promise<RemoteSession> {
     const ended = await this.end(`owner_account_id=$1 and id=$2`, [ownerId,id], reason);
-    if (!ended[0]) throw new NotFoundException('Remote session not found');
-    return ended[0];
+    // Socket cleanup can finish before an explicit Disconnect request arrives.
+    const session = ended[0] ?? await this.repository.findOwned(ownerId,id);
+    if (!session) throw new NotFoundException('Remote session not found');
+    return session;
   }
   async endIfActive(ownerId:string,id:string,reason:string):Promise<RemoteSession|undefined> {
     return (await this.end('owner_account_id=$1 and id=$2',[ownerId,id],reason))[0];

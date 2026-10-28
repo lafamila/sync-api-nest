@@ -35,7 +35,8 @@ export class RemoteSessionRepository {
 
   async listOwned(ownerAccountId: string): Promise<RemoteSession[]> {
     const result = await this.db.query<SessionRow>(
-      `select * from sync_remote_sessions where owner_account_id=$1 order by created_at desc limit 200`, [ownerAccountId]);
+      `select * from sync_remote_sessions where owner_account_id=$1 and ended_at is null and expires_at > now()
+       order by created_at desc limit 200`, [ownerAccountId]);
     return result.rows.map(mapSession);
   }
   async findOwned(ownerAccountId: string, id: string): Promise<RemoteSession | undefined> {

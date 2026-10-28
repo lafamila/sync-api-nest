@@ -9,6 +9,7 @@ import { RedisService } from '../src/redis/redis.service';
 import { RevocationBusService } from '../src/common/revocation-bus.service';
 import { RemoteSessionRepository } from '../src/sessions/remote-session.repository';
 import { RemoteSessionService } from '../src/sessions/remote-session.service';
+import { RemoteSessionController } from '../src/sessions/remote-session.controller';
 import { DeviceRepository } from '../src/devices/device.repository';
 import { DeviceProofService } from '../src/devices/device-proof.service';
 import { ModeService } from '../src/devices/mode.service';
@@ -197,6 +198,33 @@ integration('PostgreSQL and Redis security integration', () => {
     const ticket=await tickets.issue({role:'device',ownerAccountId:account.id,deviceId:randomUUID(),platform:'macos',authSessionId:randomUUID()});
     await expect(tickets.consume(ticket)).resolves.toMatchObject({role:'device',ownerAccountId:account.id});
     await expect(tickets.consume(ticket)).rejects.toThrow('already used');
+  });
+
+  it('lists only live owned sessions after mode-off or controller disconnect', async()=>{
+    const owner={...account,id:`session-list-${randomUUID()}`};
+    const authSessionId=await sessionRepository.create({token:randomOpaque(48),csrfToken:randomOpaque(),account:owner,platform:'web',
+      accessToken:'fixture-access',refreshToken:'fixture-refresh',accessTokenExpiresAt:new Date(Date.now()+900_000)});
+    async function createSession(ownerId:string,expiresAt:Date) {
+      const host=await devices.create(ownerId,{name:'Session list host',platform:'macos',publicKeyDer:Buffer.from('fixture')});
+      return remoteSessions.create({ownerAccountId:ownerId,hostId:host.id,controllerKind:'browser',scope:'control',
+        epoch:randomUUID(),authSessionId,expiresAt});
+    }
+    const active=await createSession(owner.id,new Date(Date.now()+120_000));
+    const ended=await createSession(owner.id,new Date(Date.now()+120_000));
+    const expired=await createSession(owner.id,new Date(Date.now()-1_000));
+    await createSession('other-session-list-owner',new Date(Date.now()+120_000));
+    await remoteSessions.endOwned(owner.id,ended.id,'controller_disconnected');
+    const controller=new RemoteSessionController(remoteSessions,proofs,{} as never);
+    const request={syncSession:{account:owner}} as never;
+    expect((await controller.list(request)).sessions.map((session)=>session.id)).toEqual([active.id]);
+
+    // Expiry must be filtered even before the maintenance sweep persists ended_at.
+    expect((await remoteSessions.findOwned(owner.id,expired.id))?.endedAt).toBeNull();
+    const host=(await devices.findOwned(owner.id,active.hostId))!;
+    await modes.set(owner,host,{enabled:false,allowBrowser:false});
+    await expect(controller.list(request)).resolves.toEqual({sessions:[]});
+    const originalEnd=await remoteSessions.findOwned(owner.id,ended.id);
+    await expect(remoteSessions.endOwned(owner.id,ended.id,'revoked')).resolves.toEqual(originalEnd);
   });
 
   it('routes only valid signaling roles and replaces host sockets without stale offline cleanup', async()=>{
