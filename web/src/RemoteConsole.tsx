@@ -61,11 +61,11 @@ interface TouchPoint extends Point {
 type FitMode = "fit" | "fill";
 type GestureMode = "none" | "scroll" | "pinch";
 
-const MODIFIER_KEYS: Array<{ modifier: Modifier; key: string; label: string }> = [
-  { modifier: "meta", key: "MetaLeft", label: "Command" },
-  { modifier: "ctrl", key: "ControlLeft", label: "Control" },
-  { modifier: "alt", key: "AltLeft", label: "Option" },
-  { modifier: "shift", key: "ShiftLeft", label: "Shift" },
+const MODIFIER_KEYS: Array<{ modifier: Modifier; label: string }> = [
+  { modifier: "meta", label: "Command" },
+  { modifier: "ctrl", label: "Control" },
+  { modifier: "alt", label: "Option" },
+  { modifier: "shift", label: "Shift" },
 ];
 
 const SPECIAL_KEYS = new Set([
@@ -353,8 +353,8 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     event.preventDefault();
     connection.sendReliable({
       type: "scroll",
-      dx: clamp(event.deltaX, -120, 120),
-      dy: clamp(event.deltaY, -120, 120),
+      dx: clamp(event.deltaX, -100, 100),
+      dy: clamp(event.deltaY, -100, 100),
     });
   }
 
@@ -368,12 +368,13 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }
 
   function keyboardEvent(event: KeyboardEvent<HTMLTextAreaElement>, down: boolean) {
-    if (!authorized || composingRef.current) return;
-    const hasCommandModifier = event.metaKey || event.ctrlKey || event.altKey;
+    if (!authorized || composingRef.current || PHYSICAL_MODIFIER_CODES.has(event.code)) return;
+    const modifiers = currentModifiers(event);
+    const hasCommandModifier = modifiers.some((modifier) => modifier !== "shift");
     const key = SPECIAL_KEYS.has(event.key) ? event.key : event.code;
-    if (!SPECIAL_KEYS.has(event.key) && !hasCommandModifier && !PHYSICAL_MODIFIER_CODES.has(event.code)) return;
+    if (!SPECIAL_KEYS.has(event.key) && !hasCommandModifier && !stickyModifiers.has("shift")) return;
     event.preventDefault();
-    connection.sendReliable({ type: "key", key, down, modifiers: currentModifiers(event) });
+    connection.sendReliable({ type: "key", key, down, modifiers });
   }
 
   function textInput(event: FormEvent<HTMLTextAreaElement>) {
@@ -401,14 +402,13 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     event.currentTarget.value = "";
   }
 
-  function toggleModifier(modifier: Modifier, key: string) {
+  function toggleModifier(modifier: Modifier) {
     if (!authorized) return;
     setStickyModifiers((current) => {
       const next = new Set(current);
       const down = !next.has(modifier);
       if (down) next.add(modifier);
       else next.delete(modifier);
-      connection.sendReliable({ type: "key", key, down, modifiers: Array.from(next) });
       return next;
     });
   }
@@ -511,7 +511,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
             <span>{authorized ? "Input active" : "Input locked"}</span>
           </div>
           <div className="key-group">
-            {MODIFIER_KEYS.map(({ modifier, key, label }) => (
+            {MODIFIER_KEYS.map(({ modifier, label }) => (
               <button
                 key={modifier}
                 className={`key-button ${stickyModifiers.has(modifier) ? "active" : ""}`}
@@ -519,7 +519,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
                 aria-label={label}
                 aria-pressed={stickyModifiers.has(modifier)}
                 disabled={!authorized}
-                onClick={() => toggleModifier(modifier, key)}
+                onClick={() => toggleModifier(modifier)}
               >
                 {modifier === "meta" ? <Command /> : label.slice(0, 3)}
               </button>

@@ -165,6 +165,72 @@ test("negotiates real WebRTC video and both control channels", async ({ browser,
   await hostContext.close();
 });
 
+test("keeps wheel input within the native host's scroll limits", async ({ browser, context, page }) => {
+  const hostContext = await browser.newContext();
+  try {
+    const host = await hostContext.newPage();
+    await host.goto("/__test/host");
+    await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
+
+    await authorize(context);
+    await connectController(page);
+    await page.getByTestId("video-stage").hover();
+    await page.mouse.wheel(240, -360);
+
+    await expect.poll(() => host.evaluate(() =>
+      (window as unknown as { __messages: Array<{ type: string; dx?: number; dy?: number }> }).__messages
+        .filter((message) => message.type === "scroll")
+        .map(({ dx, dy }) => ({ dx, dy })),
+    )).toContainEqual({ dx: 100, dy: -100 });
+  } finally {
+    await hostContext.close();
+  }
+});
+
+test("sends sticky modifiers as native key events instead of text", async ({ browser, context, page }) => {
+  const hostContext = await browser.newContext();
+  try {
+    const host = await hostContext.newPage();
+    await host.goto("/__test/host");
+    await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
+
+    await authorize(context);
+    await connectController(page);
+    await page.getByRole("button", { name: "Keyboard", exact: true }).click();
+
+    for (const label of ["Command", "Control", "Option", "Shift"]) {
+      const modifier = page.getByRole("button", { name: label, exact: true });
+      await modifier.click();
+      await expect(modifier).toHaveAttribute("aria-pressed", "true");
+      await page.getByLabel("Remote text input").press("a");
+      await modifier.click();
+      await expect(modifier).toHaveAttribute("aria-pressed", "false");
+    }
+
+    await expect.poll(() => host.evaluate(() =>
+      (window as unknown as { __messages: Array<{ type: string; key?: string; down?: boolean; modifiers?: string[] }> }).__messages
+        .filter((message) => message.type === "key")
+        .map(({ key, down, modifiers }) => ({ key, down, modifiers })),
+    )).toEqual(["meta", "ctrl", "alt", "shift"].flatMap((modifier) => [
+      { key: "KeyA", down: true, modifiers: [modifier] },
+      { key: "KeyA", down: false, modifiers: [modifier] },
+    ]));
+    expect(await host.evaluate(() =>
+      (window as unknown as { __messages: Array<{ type: string; text?: string }> }).__messages
+        .some((message) => message.type === "text" && message.text === "a"),
+    )).toBe(false);
+
+    await page.getByLabel("Remote text input").press("a");
+    await expect.poll(() => host.evaluate(() =>
+      (window as unknown as { __messages: Array<{ type: string; text?: string }> }).__messages
+        .filter((message) => message.type === "text")
+        .map((message) => message.text),
+    )).toEqual(["a"]);
+  } finally {
+    await hostContext.close();
+  }
+});
+
 test("reconnects with a fresh peer and never replays old reliable input", async ({ browser, context, page }) => {
   const hostContext = await browser.newContext();
   const host = await hostContext.newPage();
