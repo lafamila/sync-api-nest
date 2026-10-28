@@ -159,6 +159,7 @@ function startApi({apiPort,apiBase,oidc}) {
     NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(apiPort),SYNC_PUBLIC_URL:apiBase,SYNC_ALLOWED_ORIGINS:'',
     DATABASE_URL:databaseUrl,DATABASE_SSL:'false',SYNC_AUTO_MIGRATE:'true',REDIS_URL:redisUrl,SYNC_REDIS_KEY_PREFIX:redisPrefix,
     SYNC_AUTH_ISSUER_URL:oidc.issuer,SYNC_AUTH_JWKS_URL:`${oidc.issuer}/oauth/jwks`,SYNC_AUTH_AUDIENCE:'service:sync',
+    SYNC_OIDC_AUTHORIZATION_URL:`${oidc.issuer}/oauth/authorize`,
     SYNC_OIDC_CLIENT_ID:clientId,SYNC_OIDC_CLIENT_SECRET:clientSecret,SYNC_OIDC_REDIRECT_URI:`${apiBase}/api/session/oidc/callback`,
     SYNC_SESSION_ENCRYPTION_KEY:sessionEncryptionKey,SYNC_PIN_PEPPER:pinPepper,
     SYNC_AUTH_RECHECK_SECONDS:'20',SYNC_AUTH_HTTP_TIMEOUT_MS:'2000',SYNC_STUN_URLS:fileEnv.SYNC_STUN_URLS ?? '',

@@ -23,4 +23,11 @@ describe('RequestSecurityService', () => {
     const request={headers:{}} as Request;
     expect(()=>service.assertMutation(request,{...base,source:'native',platform:'ios'})).not.toThrow();
   });
+  it('allows only the explicitly configured LAN origin while preserving CSRF checks', () => {
+    const lan = new RequestSecurityService(new SyncConfigService(testConfig({ allowedOrigins: ['http://192.168.0.10:3053'] })));
+    const request = { headers: { origin: 'http://192.168.0.10:3053', 'x-csrf-token': 'csrf', cookie: 'sync_csrf=csrf' } } as unknown as Request;
+    expect(() => lan.assertMutation(request, base)).not.toThrow();
+    expect(() => lan.assertMutation({ headers: { ...request.headers, origin: 'http://192.168.0.11:3053' } } as unknown as Request, base)).toThrow(ForbiddenException);
+    expect(() => lan.assertMutation({ headers: { ...request.headers, 'x-csrf-token': undefined } } as unknown as Request, base)).toThrow(ForbiddenException);
+  });
 });

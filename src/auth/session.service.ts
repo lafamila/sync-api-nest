@@ -69,7 +69,7 @@ export class SessionService {
       .set(this.txKey(tx.id), JSON.stringify(tx), 'EX', ttl)
       .set(this.stateKey(tx.state), tx.id, 'EX', ttl)
       .exec();
-    const authorize = new URL(`${this.config.config.authIssuerUrl}/oauth/authorize`);
+    const authorize = new URL(this.config.config.oidcAuthorizationUrl ?? `${this.config.config.authIssuerUrl}/oauth/authorize`);
     authorize.searchParams.set('client_id', this.config.config.oidcClientId!);
     authorize.searchParams.set('redirect_uri', this.config.config.oidcRedirectUri);
     authorize.searchParams.set('response_type', 'code');

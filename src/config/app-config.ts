@@ -16,6 +16,7 @@ export interface SyncConfig {
   authJwksUrl?: string;
   authAudience: string;
   authServiceKey: string;
+  oidcAuthorizationUrl?: string;
   oidcClientId?: string;
   oidcClientSecret?: string;
   oidcRedirectUri: string;
@@ -66,6 +67,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SyncConfig {
     authJwksUrl: optionalHttpUrl(env.SYNC_AUTH_JWKS_URL, 'SYNC_AUTH_JWKS_URL'),
     authAudience: env.SYNC_AUTH_AUDIENCE ?? 'service:sync',
     authServiceKey: 'sync',
+    oidcAuthorizationUrl: optionalHttpUrl(env.SYNC_OIDC_AUTHORIZATION_URL, 'SYNC_OIDC_AUTHORIZATION_URL'),
     oidcClientId: optional(env.SYNC_OIDC_CLIENT_ID),
     oidcClientSecret: optional(env.SYNC_OIDC_CLIENT_SECRET),
     oidcRedirectUri: env.SYNC_OIDC_REDIRECT_URI ?? `${publicUrl}/api/session/oidc/callback`,

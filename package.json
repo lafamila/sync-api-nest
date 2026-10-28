@@ -17,6 +17,7 @@
     "start:dev": "node --env-file-if-exists=.env -r ts-node/register src/main.ts",
     "db:migrate": "node --env-file-if-exists=.env -r ts-node/register src/database/migrate.ts",
     "test": "jest --runInBand",
+    "test:dev-proxy": "node --test scripts/dev-auth-lan.test.mjs",
     "test:integration": "SYNC_INTEGRATION_TESTS=1 jest --runInBand test/integration.spec.ts",
     "test:system": "npm run build:all && node test/system/sync-system.mjs"
   },

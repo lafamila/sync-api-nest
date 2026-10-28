@@ -1,0 +1,30 @@
+{
+  "serviceKey": "sync",
+  "name": "Sync",
+  "description": "Personal trusted-device screen mirroring and remote-control service",
+  "permissions": [
+    {
+      "key": "member",
+      "label": "Member",
+      "description": "Use account-owned Sync devices and remote sessions"
+    }
+  ],
+  "oidcClients": [
+    {
+      "clientId": "sync-api",
+      "clientType": "confidential",
+      "redirectUris": [
+        "http://localhost:3053/api/session/oidc/callback",
+        "http://192.168.0.10:3053/api/session/oidc/callback"
+      ],
+      "allowedScopes": [
+        "openid",
+        "profile",
+        "email",
+        "service.permission"
+      ],
+      "requirePkce": true
+    }
+  ],
+  "serviceCredentials": []
+}
