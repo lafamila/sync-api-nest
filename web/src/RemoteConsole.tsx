@@ -26,6 +26,7 @@ import {
   useState,
 } from "react";
 import type { RemoteConnection } from "./remoteConnection";
+import { remoteTextEdit, wireTextChunks } from "./remoteTextInput";
 import type {
   Account,
   ConnectionMetrics,
@@ -135,7 +136,8 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const keyboardRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
-  const suppressedInputRef = useRef<string | null>(null);
+  const inputValueRef = useRef("");
+  const forwardedKeysRef = useRef(new Set<string>());
   const touchesRef = useRef(new Map<number, TouchPoint>());
   const mouseButtonRef = useRef<"left" | "right" | null>(null);
   const touchDraggingRef = useRef(false);
@@ -160,8 +162,17 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }, [keyboardOpen]);
 
   useEffect(() => {
+    if (!authorized) {
+      resetKeyboardBuffer();
+      forwardedKeysRef.current.clear();
+    }
+  }, [authorized]);
+
+  useEffect(() => {
     const release = () => {
       connection.releaseAll();
+      resetKeyboardBuffer();
+      forwardedKeysRef.current.clear();
       setStickyModifiers(new Set());
       mouseButtonRef.current = null;
       touchDraggingRef.current = false;
@@ -208,6 +219,10 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }
 
   function sendButton(point: Point, button: "left" | "right", down: boolean) {
+    if (down) {
+      synchronizeKeyboard();
+      resetKeyboardBuffer();
+    }
     connection.sendReliable({ type: "button", x: point.x, y: point.y, button, down });
   }
 
@@ -368,38 +383,67 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }
 
   function keyboardEvent(event: KeyboardEvent<HTMLTextAreaElement>, down: boolean) {
-    if (!authorized || composingRef.current || PHYSICAL_MODIFIER_CODES.has(event.code)) return;
+    if (!authorized || composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || PHYSICAL_MODIFIER_CODES.has(event.code)) return;
     const modifiers = currentModifiers(event);
     const hasCommandModifier = modifiers.some((modifier) => modifier !== "shift");
     const key = SPECIAL_KEYS.has(event.key) ? event.key : event.code;
+    if (!down) {
+      if (!forwardedKeysRef.current.delete(key)) return;
+      event.preventDefault();
+      connection.sendReliable({ type: "key", key, down: false, modifiers });
+      return;
+    }
+    if (!hasCommandModifier && !stickyModifiers.has("shift")) {
+      if (event.key === "Enter") return;
+      if ((event.key === "Backspace" || event.key === "Delete") && event.currentTarget.value.length > 0) return;
+    }
     if (!SPECIAL_KEYS.has(event.key) && !hasCommandModifier && !stickyModifiers.has("shift")) return;
     event.preventDefault();
-    connection.sendReliable({ type: "key", key, down, modifiers });
+    synchronizeKeyboard();
+    resetKeyboardBuffer();
+    forwardedKeysRef.current.add(key);
+    connection.sendReliable({ type: "key", key, down: true, modifiers });
   }
 
   function textInput(event: FormEvent<HTMLTextAreaElement>) {
     const nativeEvent = event.nativeEvent as InputEvent;
-    event.currentTarget.value = "";
-    if (!authorized || nativeEvent.isComposing || composingRef.current) return;
-    const text = nativeEvent.data;
-    if (!text) return;
-    if (suppressedInputRef.current === text) {
-      suppressedInputRef.current = null;
-      return;
-    }
-    connection.sendReliable({ type: "text", text: text.slice(0, 1024) });
+    if (!authorized) { resetKeyboardBuffer(); return; }
+    if (nativeEvent.isComposing || composingRef.current) return;
+    synchronizeKeyboard(event.currentTarget.value);
   }
 
   function compositionEnd(event: CompositionEvent<HTMLTextAreaElement>) {
     composingRef.current = false;
-    const text = event.data.slice(0, 1024);
-    if (!authorized || !text) return;
-    suppressedInputRef.current = text;
-    connection.sendReliable({ type: "text", text });
-    window.setTimeout(() => {
-      if (suppressedInputRef.current === text) suppressedInputRef.current = null;
-    }, 0);
-    event.currentTarget.value = "";
+    synchronizeKeyboard(event.currentTarget.value);
+  }
+
+  function synchronizeKeyboard(value = keyboardRef.current?.value ?? "") {
+    if (!authorized) return;
+    const edit = remoteTextEdit(inputValueRef.current, value);
+    for (let index = 0; index < edit.backspaces; index += 1) {
+      connection.sendReliable({ type: "key", key: "Backspace", down: true, modifiers: [] });
+      connection.sendReliable({ type: "key", key: "Backspace", down: false, modifiers: [] });
+    }
+    for (const text of wireTextChunks(edit.insertion)) {
+      if (text === "\n") {
+        connection.sendReliable({ type: "key", key: "Enter", down: true, modifiers: [] });
+        connection.sendReliable({ type: "key", key: "Enter", down: false, modifiers: [] });
+      } else connection.sendReliable({ type: "text", text });
+    }
+    inputValueRef.current = edit.value;
+  }
+
+  function resetKeyboardBuffer() {
+    inputValueRef.current = "";
+    composingRef.current = false;
+    if (keyboardRef.current) keyboardRef.current.value = "";
+  }
+
+  function leaveKeyboard() {
+    synchronizeKeyboard();
+    resetKeyboardBuffer();
+    forwardedKeysRef.current.clear();
+    connection.releaseAll();
   }
 
   function toggleModifier(modifier: Modifier) {
@@ -415,12 +459,16 @@ export function RemoteConsole(props: RemoteConsoleProps) {
 
   function tapKey(key: string) {
     if (!authorized) return;
+    synchronizeKeyboard();
+    resetKeyboardBuffer();
     connection.sendReliable({ type: "key", key, down: true, modifiers: modifierList });
     connection.sendReliable({ type: "key", key, down: false, modifiers: modifierList });
   }
 
   function releaseAll() {
     connection.releaseAll();
+    resetKeyboardBuffer();
+    forwardedKeysRef.current.clear();
     setStickyModifiers(new Set());
   }
 
@@ -532,7 +580,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
           </div>
           <div className="dock-actions">
             <button className="icon-button" title="Release all keys" aria-label="Release all keys" disabled={!authorized} onClick={releaseAll}><RotateCcw /></button>
-            <button className={`icon-button ${keyboardOpen ? "active" : ""}`} title="Keyboard" aria-label="Keyboard" disabled={!authorized} onClick={() => setKeyboardOpen((open) => !open)}><Keyboard /></button>
+            <button className={`icon-button ${keyboardOpen ? "active" : ""}`} title="Keyboard" aria-label="Keyboard" disabled={!authorized} onClick={() => { if (keyboardOpen) leaveKeyboard(); setKeyboardOpen((open) => !open); }}><Keyboard /></button>
           </div>
           {keyboardOpen && (
             <label className="text-entry">
@@ -545,10 +593,10 @@ export function RemoteConsole(props: RemoteConsoleProps) {
                 aria-label="Remote text input"
                 onCompositionStart={() => {
                   composingRef.current = true;
-                  suppressedInputRef.current = null;
                 }}
                 onCompositionEnd={compositionEnd}
                 onInput={textInput}
+                onBlur={leaveKeyboard}
                 onKeyDown={(event) => keyboardEvent(event, true)}
                 onKeyUp={(event) => keyboardEvent(event, false)}
               />

@@ -187,6 +187,80 @@ test("keeps wheel input within the native host's scroll limits", async ({ browse
   }
 });
 
+test("preserves Korean IME composition until committed and sends it once", async ({ browser, context, page }) => {
+  const hostContext = await browser.newContext();
+  try {
+    const host = await hostContext.newPage();
+    await host.goto("/__test/host");
+    await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
+    await authorize(context);
+    await connectController(page);
+    await page.getByRole("button", { name: "Keyboard", exact: true }).click();
+    const input = page.getByLabel("Remote text input");
+    await input.focus();
+    const cdp = await context.newCDPSession(page);
+    for (const text of ["ㅎ", "하", "한", "한ㄱ", "한그", "한글"]) {
+      await cdp.send("Input.imeSetComposition", { text, selectionStart: text.length, selectionEnd: text.length });
+      await expect(input).toHaveValue(text);
+    }
+    expect(await host.evaluate(() =>
+      (window as unknown as { __messages: Array<{ type: string }> }).__messages.filter((message) => message.type === "text"),
+    )).toEqual([]);
+
+    await cdp.send("Input.insertText", { text: "한글" });
+    await expect(input).toHaveValue("한글");
+    await expect.poll(() => host.evaluate(() =>
+      (window as unknown as { __messages: Array<{ type: string; text?: string }> }).__messages
+        .filter((message) => message.type === "text").map((message) => message.text),
+    )).toEqual(["한글"]);
+    await cdp.detach();
+  } finally {
+    await hostContext.close();
+  }
+});
+
+test("keeps Hangul editable when the keyboard emits no composition events", async ({ browser, context, page }) => {
+  const hostContext = await browser.newContext();
+  try {
+    const host = await hostContext.newPage();
+    await host.goto("/__test/host");
+    await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
+    await authorize(context);
+    await connectController(page);
+    await page.getByRole("button", { name: "Keyboard", exact: true }).click();
+    const input = page.getByLabel("Remote text input");
+    for (const value of ["ㅎ", "하", "한", "한ㄱ", "한그", "한글", "한글 ㅇ", "한글 이", "한글 입", "한글 입ㄹ", "한글 입려", "한글 입력"]) {
+      await input.evaluate((element: HTMLTextAreaElement, next) => {
+        element.value = next;
+        element.setSelectionRange(next.length, next.length);
+        element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: next, isComposing: false }));
+      }, value);
+      await expect(input).toHaveValue(value);
+    }
+    const receivedText = () => host.evaluate(() => {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+      let value = "";
+      for (const message of (window as unknown as { __messages: Array<{ type: string; text?: string; key?: string; down?: boolean }> }).__messages) {
+        if (message.type === "text") value += message.text ?? "";
+        if (message.type === "key" && message.key === "Backspace" && message.down) {
+          value = Array.from(segmenter.segment(value), (part) => part.segment).slice(0, -1).join("");
+        }
+      }
+      return value;
+    });
+    await expect.poll(receivedText).toBe("한글 입력");
+    await input.press("Backspace");
+    await expect(input).toHaveValue("한글 입");
+    await expect.poll(receivedText).toBe("한글 입");
+    await page.keyboard.insertText("🙂");
+    await expect.poll(receivedText).toBe("한글 입🙂");
+    await input.press("Backspace");
+    await expect.poll(receivedText).toBe("한글 입");
+  } finally {
+    await hostContext.close();
+  }
+});
+
 test("sends sticky modifiers as native key events instead of text", async ({ browser, context, page }) => {
   const hostContext = await browser.newContext();
   try {
@@ -286,6 +360,30 @@ test("reconnects with a fresh peer and never replays old reliable input", async 
   await page.waitForTimeout(2_200);
   expect((await harnessState(page)).connectCount).toBe(beforeModeOff);
   await hostContext.close();
+});
+
+test("explicitly ends a session and returns to refreshed hosts without reconnecting", async ({ browser, context, page }) => {
+  const hostContext = await browser.newContext();
+  try {
+    const host = await hostContext.newPage();
+    await host.goto("/__test/host");
+    await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
+    await authorize(context);
+    await connectController(page);
+    const initial = await harnessState(page);
+    const refreshed = page.waitForResponse((response) => response.url().endsWith("/api/devices") && response.ok());
+
+    await page.getByRole("button", { name: "End session", exact: true }).click();
+    await refreshed;
+    await expect(page.getByRole("heading", { name: "Online Macs" })).toBeVisible();
+    await expect(page.getByTestId("video-stage")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect.poll(async () => (await harnessState(page)).endedSessionIds).toContain(initial.activeSessionId);
+    await page.waitForTimeout(2_200);
+    expect((await harnessState(page)).connectCount).toBe(initial.connectCount);
+  } finally {
+    await hostContext.close();
+  }
 });
 
 test("renews the session after a foregrounded heartbeat lease expires", async ({ browser, context, page }) => {
