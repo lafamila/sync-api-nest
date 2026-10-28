@@ -15,4 +15,8 @@ Root canonical plan: `../.idea/SYNC_REMOTE_ACCESS_PLAN.md`. 세부 계약 변경
 
 API typecheck/unit/integration/security tests, web build/e2e, env 비밀 검증 및 README 운영 명령. 로그에 PIN/토큰/키보드 입력을 저장하지 않는다. auth onboarding 승인 전 상태는 unconfigured로 표시하며 인증을 우회하지 않는다.
 
+웹 입력은 Swift 계약과 함께 검토한다. 스크롤 dx/dy는 -100...100이며, Command/Control/Option/Shift는 지원되는 key 이벤트의 modifiers로 전달한다. 네이티브가 모르는 MetaLeft 등의 독립 key 이벤트나 조합키 대신 일반 text를 보내지 않는다. `web/tests/sync.spec.ts`에 실제 채널 회귀 검증이 있다.
+
 Native 완료는 initiating app verifier와 callback에만 전달되는 60초 일회용 handoffCode를 모두 요구한다. 웹/앱 세션 전송 방식은 DB의 발급 platform으로 검증하며 caller header만으로 바꾸지 않는다. 운영 배포/공개 auth 등록은 사용자가 직접 수행한다.
+
+LAN 개발 테스트의 브라우저 인증 주소는 선택적 `SYNC_OIDC_AUTHORIZATION_URL`로 분리한다. 토큰 교환·JWT issuer/JWKS 검증은 기존 `SYNC_AUTH_*`를 유지한다. `scripts/dev-auth-lan.mjs`는 지정된 사설 IPv4에서 기존 loopback auth의 공개 OAuth/OIDC 경로만 전달하며 admin/service 경로를 노출하지 않는다. Origin은 정확한 주소만 추가하고 CSRF 검사를 유지한다. LAN callback도 사용자 onboarding 변경 승인이 필요하고 승인 시 새 secret을 서버 `.env`에 반영한다. 운영에는 이 개발용 HTTP 프록시를 사용하지 않는다.
