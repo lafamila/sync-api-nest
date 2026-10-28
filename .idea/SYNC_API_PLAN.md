@@ -12,6 +12,10 @@ API/auth/device/PIN/session/Redis/PostgreSQL/signaling와 React 웹을 구현한
 
 ## 구현 검증 기록
 
+2026-10-28 iOS 입력 2차 후속: 첫 IME 수정은 Chromium에서 통과했지만 실제 폰에서는 여전히 조합이 끊긴다고 보고됐다. 조합 이벤트 없이 value를 제자리 교체하는 패턴을 추가해 재현했고, textarea를 유지한 채 Intl.Segmenter 기반 변경분을 기존 Backspace/text로 반영하도록 수정했다. 포커스/연결 전환 시 버퍼를 폐기하며 입력 원문을 기록/저장하지 않는다. 웹16개(브라우저12+텍스트 편집4)·빌드 통과, LAN 최신 asset 반영 확인. 이 버전의 실제 폰 입력 확인은 Native 앱 교착 수정 후 재요청한 상태다.
+
+2026-10-28 실제 사용 후속: 종료된 원격 세션 2건을 Active sessions로 표시하는 원인은 종료 이력을 그대로 반환하던 목록이었다. 목록을 active/unexpired만 반환하도록 바꾸고 중복 Disconnect를 소유권을 유지한 멱등 종료로 처리했다(이력 삭제 없음). Unit23·전용 DB/Redis10 및 통합 fixture 통과. 웹 한글 조합은 input handler가 composing 확인 전에 textarea를 비우던 원인을 실제 Chromium IME로 재현·수정했다. 브라우저 전체11·웹 빌드 통과 후 LAN 서버에 반영했으며 실제 폰 조합 확인을 요청했다.
+
 2026-10-28 후속 검증: 네이티브 입력 규격에 맞춰 웹 스크롤 범위와 조합키를 수정하고 브라우저 9개 통과. LAN용 정확한 Origin·callback 및 브라우저 authorization endpoint 분리를 추가했다. 기존 auth issuer는 변경하지 않고 공개 OAuth/OIDC 경로만 전달하는 LAN 프록시를 검증했다(admin 비노출). Unit17·전용 DB/Redis9·proxy4·실제 HTTP/OIDC fixture/직접·LAN TURN 강제 중계 통합 검증 통과.
 
 후속 사용자 명시 요청으로 이번 로컬 auth DB의 `sync-api` redirect URI에 `http://192.168.0.10:3053/api/session/oidc/callback`만 직접 추가했다. localhost callback·secret·권한은 유지하고 before URI 백업과 auth 감사 기록을 남겼다. 승인 snapshot이나 일반/운영 onboarding 절차는 변경하지 않는다. 실제 LAN login start201·auth HTML200 확인, secret 재발급/프로세스 재시작은 불필요하다. 실제 계정 로그인 이후 화면/입력 검증은 별도다.

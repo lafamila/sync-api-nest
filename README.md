@@ -69,6 +69,10 @@ All routes use `/api`. Browser auth uses the HttpOnly `sync_session` cookie and 
 
 Native login uses provider PKCE plus the app's `challenge=base64url(SHA256(verifier))`. Successful callbacks return `sync://auth?transactionId=...&handoffCode=...`. Completion requires both the initiating app verifier and this callback-only one-use code, which expires after 60 seconds by default. Start responses never disclose the callback code. Browser cookies and native header sessions are bound to their issued platform in storage. Login initiation has per-client and global rate limits configured by `SYNC_LOGIN_RATE_PER_IP` and `SYNC_LOGIN_RATE_GLOBAL`.
 
+The session list contains only unended, unexpired owned connections. Ended history remains in PostgreSQL, not in the active list. Repeating an owned session termination succeeds without changing its original termination reason; ownership/proof checks still apply.
+
+Web text input keeps its textarea under the browser keyboard's control. With composition events it waits for commit; without them it mirrors grapheme-level edits using existing Backspace/text messages, supporting iOS Korean in-place replacements without clearing the IME buffer. The ephemeral buffer is cleared on focus/context changes and connection loss, never logged or persisted. Regressions cover real Chromium composition and the no-composition-event input pattern, deletion, joined emoji and wire chunk limits. The WebKit Korean event behavior is documented in https://bugs.webkit.org/show_bug.cgi?id=274700.
+
 Device public keys are base64 P-256 SPKI DER. Signatures are base64 ASN.1 DER ECDSA-SHA256 over exactly:
 
 ```text
