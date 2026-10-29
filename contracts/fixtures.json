@@ -1,0 +1,107 @@
+{
+  "description": "Public interoperable fixtures only. Never use this deterministic test key or nonce for authentication.",
+  "proofs": {
+    "testOnly": true,
+    "algorithm": "ECDSA-P256-SHA256-SPKI-DER",
+    "keyDescription": "Publicly known insecure test scalar d=1 and nonce k=1; signatures are fixed test vectors, not credentials.",
+    "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li/hp/m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q==",
+    "registration": {
+      "challengeId": "test-challenge-000000000001", "nonce": "test-nonce-000000000000000001",
+      "canonical": "sync:register:test-challenge-000000000001:test-nonce-000000000000000001",
+      "signature": "MEUCIGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWAiEApAi7wjoQe/TfxN2acdmqDNeOYiosL840bxHbaPb7Jwo="
+    },
+    "device": {
+      "deviceId": "11111111-1111-4111-8111-111111111111", "challengeId": "test-challenge-000000000001", "nonce": "test-nonce-000000000000000001",
+      "canonical": "sync:device:11111111-1111-4111-8111-111111111111:test-challenge-000000000001:test-nonce-000000000000000001",
+      "signature": "MEUCIGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWAiEAumihWBI/ov2O7bNRjhCam3PzqH3SYap7RnalkOHPjo4="
+    },
+    "invalidComponents": ["", "has:colon", "line\nbreak", "line\rbreak", "line\u0085break", "line\u2028break", "line\u2029break"]
+  },
+  "valid": [
+    {"name":"account","model":"WireAccount","value":{"id":"test-account","name":"Sync Test","permission":"member","futureField":true}},
+    {"name":"mode","model":"WireMode","value":{"epoch":"33333333-3333-4333-8333-333333333333","expiresAt":"2026-10-29T12:00:00Z","allowBrowser":true}},
+    {"name":"legacy-device-defaults","model":"WireDevice","value":{"id":"11111111-1111-4111-8111-111111111111","name":"Mac","platform":"macos","online":true,"mode":null,"clientVersion":null}},
+    {"name":"android-device","model":"WireDevice","value":{"id":"11111111-1111-4111-8111-111111111111","name":"Android","platform":"android","online":false,"protocolVersion":2,"clientVersion":"1.2.3-beta.1+test","capabilities":["screen-host","viewer-displays"]}},
+    {"name":"windows-device","model":"WireDevice","value":{"id":"11111111-1111-4111-8111-111111111111","name":"Windows","platform":"windows","online":true,"protocolVersion":2,"capabilities":["screen-host","input-host","host-displays","viewer-displays","multi-window","mode-duration"]}},
+    {"name":"legacy-session-defaults","model":"WireRemoteSession","value":{"id":"22222222-2222-4222-8222-222222222222","hostId":"11111111-1111-4111-8111-111111111111","controllerId":"browser","scope":"control","epoch":"33333333-3333-4333-8333-333333333333","expiresAt":"2026-10-29T12:00:00.000Z","futureOptional":42}},
+    {"name":"ice-server","model":"WireICEServer","value":{"urls":["turn:turn.example.invalid:3478"],"username":"public-test-user","credential":"public-test-only"}},
+    {"name":"ice-candidate","model":"WireSignalCandidate","value":{"candidate":"candidate:1 1 udp 1 192.0.2.1 12345 typ host","sdpMid":null,"sdpMLineIndex":0}},
+    {"name":"display","model":"WireDisplay","value":{"id":"display-1","name":"Main","width":1920,"height":1080,"isPrimary":true}},
+    {"name":"ping","model":"WireSignal","value":{"type":"ping"}},
+    {"name":"ready","model":"WireSignal","value":{"type":"ready","deviceId":"11111111-1111-4111-8111-111111111111"}},
+    {"name":"offer","model":"WireSignal","value":{"type":"offer","sessionId":"22222222-2222-4222-8222-222222222222","sdp":"v=0\r\n"}},
+    {"name":"get-displays","model":"WireSignal","value":{"type":"get-displays","sessionId":"22222222-2222-4222-8222-222222222222"}},
+    {"name":"initial-displays","model":"WireSignal","value":{"type":"displays","sessionId":"22222222-2222-4222-8222-222222222222","displays":[{"id":"display-1","name":"Main","width":1920,"height":1080,"isPrimary":true}],"selectedDisplayId":"display-1","inputEpoch":"33333333-3333-4333-8333-333333333333"}},
+    {"name":"select-display","model":"WireSignal","value":{"type":"select-display","sessionId":"22222222-2222-4222-8222-222222222222","displayId":"display-2","inputEpoch":"33333333-3333-4333-8333-333333333333","requestId":"55555555-5555-4555-8555-555555555555"}},
+    {"name":"switched-displays","model":"WireSignal","value":{"type":"displays","sessionId":"22222222-2222-4222-8222-222222222222","displays":[{"id":"display-2","name":"Portrait","width":1080,"height":1920,"isPrimary":false}],"selectedDisplayId":"display-2","inputEpoch":"44444444-4444-4444-8444-444444444444","requestId":"55555555-5555-4555-8555-555555555555"}},
+    {"name":"display-error","model":"WireSignal","value":{"type":"display-error","sessionId":"22222222-2222-4222-8222-222222222222","requestId":"55555555-5555-4555-8555-555555555555","reason":"unavailable"}},
+    {"name":"v1-heartbeat","model":"WireInput","value":{"type":"heartbeat","seq":1,"epoch":"33333333-3333-4333-8333-333333333333"}},
+    {"name":"v2-heartbeat","model":"WireInput","value":{"type":"heartbeat","seq":2,"epoch":"33333333-3333-4333-8333-333333333333","inputEpoch":"44444444-4444-4444-8444-444444444444"}},
+    {"name":"pointer","model":"WireInput","value":{"type":"pointer","seq":3,"epoch":"33333333-3333-4333-8333-333333333333","inputEpoch":"44444444-4444-4444-8444-444444444444","x":0.25,"y":0.75}},
+    {"name":"unicode-text","model":"WireInput","value":{"type":"text","seq":4,"epoch":"33333333-3333-4333-8333-333333333333","text":"한글 👨‍👩‍👧‍👦 é"}},
+    {"name":"backspace","model":"WireInput","value":{"type":"key","seq":5,"epoch":"33333333-3333-4333-8333-333333333333","key":"Backspace","down":true,"modifiers":[]}},
+    {"name":"legacy-key-without-modifiers","model":"WireInput","value":{"type":"key","seq":5,"epoch":"33333333-3333-4333-8333-333333333333","key":"Enter","down":false}},
+    {"name":"sequence-safe-bound","model":"WireInput","value":{"type":"release-all","seq":9007199254740991,"epoch":"33333333-3333-4333-8333-333333333333"}},
+    {"name":"command-select-all","model":"WireInput","value":{"type":"key","seq":6,"epoch":"33333333-3333-4333-8333-333333333333","key":"KeyA","down":true,"modifiers":["meta"]}},
+    {"name":"digit-shortcut","model":"WireInput","value":{"type":"key","seq":7,"epoch":"33333333-3333-4333-8333-333333333333","key":"Digit7","down":true,"modifiers":["ctrl","shift"]}},
+    {"name":"legacy-public-config","model":"WirePublicConfig","value":{"authConfigured":true}},
+    {"name":"public-config","model":"WirePublicConfig","value":{"protocolVersion":2,"minimumProtocolVersion":1,"minimumWebProtocolVersion":2,"capabilities":["screen-host","input-host","host-displays","viewer-displays","multi-window","mode-duration"],"modeDuration":{"minimumSeconds":300,"defaultSeconds":43200,"maximumSeconds":86400},"webIdleTimeoutSeconds":900,"features":{"displaySelection":true,"browserIdle":true,"browserRecovery":true}}},
+    {"name":"browser-access","model":"WireBrowserAccess","value":{"activityToken":"public-test-activity-token-only","serverNow":"2026-10-29T10:00:00Z","lastActivityAt":"2026-10-29T10:00:00Z","idleDeadline":"2026-10-29T10:15:00Z"}},
+    {"name":"browser-activity-request","model":"WireBrowserActivity","value":{"activityToken":"public-test-activity-token-only"}},
+    {"name":"browser-activity-response","model":"WireBrowserActivityState","value":{"serverNow":"2026-10-29T10:01:00Z","lastActivityAt":"2026-10-29T10:01:00Z","idleDeadline":"2026-10-29T10:16:00Z"}},
+    {"name":"browser-recovery","model":"WireBrowserRecovery","value":{"activityToken":"public-test-activity-token-only","protocolVersion":2,"capabilities":["viewer-displays"]}},
+    {"name":"native-handoff","model":"WireNativeHandoff","value":{"transactionId":"public-test-transaction-only","verifier":"public-test-verifier-0000000000000000000000000000","handoffCode":"public-test-handoff-code-only"}},
+    {"name":"challenge","model":"WireChallenge","value":{"id":"test-challenge-000000000001","nonce":"test-nonce-000000000000000001","expiresAt":"2026-10-29T10:01:00Z"}},
+    {"name":"device-proof","model":"WireDeviceProof","value":{"deviceId":"11111111-1111-4111-8111-111111111111","challengeId":"test-challenge-000000000001","signature":"MEUCIGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWAiEAumihWBI/ov2O7bNRjhCam3PzqH3SYap7RnalkOHPjo4="}},
+    {"name":"mode-duration","model":"WireModeDuration","value":{"minimumSeconds":300,"defaultSeconds":43200,"maximumSeconds":86400}},
+    {"name":"legacy-feature-defaults","model":"WireFeatureFlags","value":{}},
+    {"name":"legacy-connect","model":"WireConnectResult","value":{"session":{"id":"22222222-2222-4222-8222-222222222222","hostId":"11111111-1111-4111-8111-111111111111","controllerId":"browser","scope":"view","epoch":"33333333-3333-4333-8333-333333333333","expiresAt":"2026-10-29T12:00:00Z"},"ticket":"public-test-signaling-ticket","iceServers":[]}},
+    {"name":"browser-connect","model":"WireConnectResult","value":{"session":{"id":"22222222-2222-4222-8222-222222222222","hostId":"11111111-1111-4111-8111-111111111111","controllerId":"browser","scope":"control","epoch":"33333333-3333-4333-8333-333333333333","expiresAt":"2026-10-29T12:00:00Z","protocolVersion":2,"capabilities":["host-displays","viewer-displays"]},"ticket":"public-test-signaling-ticket","iceServers":[],"webAccess":{"activityToken":"public-test-activity-token-only","serverNow":"2026-10-29T10:02:00Z","lastActivityAt":"2026-10-29T10:00:00Z","idleDeadline":"2026-10-29T10:15:00Z"}}},
+    {"name":"session-start","model":"WireSignal","value":{"type":"session-start","session":{"id":"22222222-2222-4222-8222-222222222222","hostId":"11111111-1111-4111-8111-111111111111","scope":"view","epoch":"33333333-3333-4333-8333-333333333333","expiresAt":"2026-10-29T12:00:00Z"},"iceServers":[]}},
+    {"name":"ice-signal","model":"WireSignal","value":{"type":"ice","sessionId":"22222222-2222-4222-8222-222222222222","candidate":{"candidate":"candidate:1 1 udp 1 192.0.2.1 12345 typ host","sdpMid":"0","sdpMLineIndex":0}}}
+  ],
+  "invalid": [
+    {"name":"unknown-platform","model":"WireDevice","value":{"id":"11111111-1111-4111-8111-111111111111","name":"X","platform":"linux","online":true}},
+    {"name":"unknown-capability","model":"WirePublicConfig","value":{"capabilities":["shell-access"]}},
+    {"name":"duplicate-capability","model":"WirePublicConfig","value":{"capabilities":["input-host","input-host"]}},
+    {"name":"unknown-command","model":"WireSignal","value":{"type":"execute"}},
+    {"name":"missing-select-request","model":"WireSignal","value":{"type":"select-display","sessionId":"22222222-2222-4222-8222-222222222222","displayId":"display-2","inputEpoch":"33333333-3333-4333-8333-333333333333"}},
+    {"name":"invalid-display-epoch","model":"WireSignal","value":{"type":"select-display","sessionId":"22222222-2222-4222-8222-222222222222","displayId":"display-2","inputEpoch":"old","requestId":"55555555-5555-4555-8555-555555555555"}},
+    {"name":"path-display","model":"WireDisplay","value":{"id":"../../display","name":"Main","width":1920,"height":1080,"isPrimary":true}},
+    {"name":"zero-dimension","model":"WireDisplay","value":{"id":"1","name":"Main","width":0,"height":1080,"isPrimary":true}},
+    {"name":"fractional-dimension","model":"WireDisplay","value":{"id":"1","name":"Main","width":1920.5,"height":1080,"isPrimary":true}},
+    {"name":"oversized-dimension","model":"WireDisplay","value":{"id":"1","name":"Main","width":32769,"height":1080,"isPrimary":true}},
+    {"name":"boolean-dimension","model":"WireDisplay","value":{"id":"1","name":"Main","width":true,"height":1080,"isPrimary":true}},
+    {"name":"unknown-display-reason","model":"WireSignal","value":{"type":"display-error","sessionId":"22222222-2222-4222-8222-222222222222","reason":"run-shell"}},
+    {"name":"missing-pointer-coordinate","model":"WireInput","value":{"type":"pointer","seq":1,"epoch":"33333333-3333-4333-8333-333333333333","x":0.1}},
+    {"name":"unknown-input","model":"WireInput","value":{"type":"clipboard","seq":1,"epoch":"33333333-3333-4333-8333-333333333333"}},
+    {"name":"unknown-key","model":"WireInput","value":{"type":"key","seq":1,"epoch":"33333333-3333-4333-8333-333333333333","key":"MetaLeft","down":true,"modifiers":[]}},
+    {"name":"duplicate-modifier","model":"WireInput","value":{"type":"key","seq":1,"epoch":"33333333-3333-4333-8333-333333333333","key":"Enter","down":true,"modifiers":["ctrl","ctrl"]}},
+    {"name":"sequence-unsafe","model":"WireInput","value":{"type":"heartbeat","seq":9007199254740992,"epoch":"33333333-3333-4333-8333-333333333333"}},
+    {"name":"scroll-bound","model":"WireInput","value":{"type":"scroll","seq":1,"epoch":"33333333-3333-4333-8333-333333333333","dx":101,"dy":0}},
+    {"name":"activity-extra-authority","model":"WireBrowserActivity","value":{"activityToken":"public-test-activity-token-only","sessionId":"22222222-2222-4222-8222-222222222222"}},
+    {"name":"date-not-iso","model":"WireBrowserActivityState","value":{"serverNow":"yesterday","lastActivityAt":"2026-10-29T10:01:00Z","idleDeadline":"2026-10-29T10:16:00Z"}},
+    {"name":"handoff-missing-verifier","model":"WireNativeHandoff","value":{"transactionId":"public-test-transaction-only","handoffCode":"public-test-handoff-code-only"}}
+  ],
+  "unicodeEdits": [
+    {"name":"korean-composition","before":"ㅎ","after":"한","deleteGraphemes":1,"insert":"한"},
+    {"name":"emoji-grapheme-backspace","before":"A👨‍👩‍👧‍👦","after":"A","deleteGraphemes":1,"insert":""},
+    {"name":"combining-grapheme","before":"é","after":"한글","deleteGraphemes":1,"insert":"한글"}
+  ],
+  "directionCases": [
+    {"type":"get-displays","sender":"controller","allowed":true}, {"type":"get-displays","sender":"host","allowed":false},
+    {"type":"select-display","sender":"controller","allowed":true}, {"type":"select-display","sender":"host","allowed":false},
+    {"type":"displays","sender":"host","allowed":true}, {"type":"displays","sender":"controller","allowed":false},
+    {"type":"display-error","sender":"host","allowed":true}, {"type":"display-error","sender":"controller","allowed":false}
+  ],
+  "inputEpochCases": [
+    {"name":"v1-no-display-epoch","protocolVersion":1,"modeEpoch":"33333333-3333-4333-8333-333333333333","currentInputEpoch":"33333333-3333-4333-8333-333333333333","messageInputEpoch":null,"allowed":true},
+    {"name":"v2-matching-epoch","protocolVersion":2,"modeEpoch":"33333333-3333-4333-8333-333333333333","currentInputEpoch":"44444444-4444-4444-8444-444444444444","messageInputEpoch":"44444444-4444-4444-8444-444444444444","allowed":true},
+    {"name":"v2-stale-epoch","protocolVersion":2,"modeEpoch":"33333333-3333-4333-8333-333333333333","currentInputEpoch":"44444444-4444-4444-8444-444444444444","messageInputEpoch":"33333333-3333-4333-8333-333333333333","allowed":false},
+    {"name":"v2-absent-epoch","protocolVersion":2,"modeEpoch":"33333333-3333-4333-8333-333333333333","currentInputEpoch":"44444444-4444-4444-8444-444444444444","messageInputEpoch":null,"allowed":false}
+  ],
+  "legacyRequests": {
+    "deviceTicket":{"deviceId":"11111111-1111-4111-8111-111111111111","challengeId":"test-challenge-000000000001","signature":"public-test-only"},
+    "connect":{"code":"123456","scope":"view"}
+  }
+}

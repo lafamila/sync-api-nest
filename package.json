@@ -17,6 +17,9 @@
     "start:dev": "node --env-file-if-exists=.env -r ts-node/register src/main.ts",
     "db:migrate": "node --env-file-if-exists=.env -r ts-node/register src/database/migrate.ts",
     "test": "jest --runInBand",
+    "contracts:generate": "node scripts/generate-contracts.mjs",
+    "contracts:check": "node scripts/generate-contracts.mjs --check",
+    "test:contracts": "node --test scripts/generate-contracts.test.mjs",
     "test:dev-proxy": "node --test scripts/dev-auth-lan.test.mjs",
     "test:integration": "SYNC_INTEGRATION_TESTS=1 jest --runInBand test/integration.spec.ts",
     "test:system": "npm run build:all && node test/system/sync-system.mjs"

@@ -1,0 +1,14 @@
+{
+  "outputs": [
+    {"repo":"sync-api-nest","kind":"typescript","path":"sync-api-nest/src/generated/sync-wire.ts"},
+    {"repo":"web","kind":"typescript","path":"sync-api-nest/web/src/generated/sync-wire.ts"},
+    {"repo":"sync-app-swift","kind":"swift","path":"sync-app-swift/Sources/SyncCore/Generated/SyncWire.swift"},
+    {"repo":"sync-app-android","kind":"kotlin","path":"sync-app-android/app/src/main/java/xyz/lafamila/sync/android/protocol/generated/SyncWire.kt"},
+    {"repo":"sync-app-windows","kind":"csharp","path":"sync-app-windows/src/Sync.Contracts/Generated/SyncWire.g.cs"},
+    {"repo":"sync-api-nest","kind":"fixtures","path":"sync-api-nest/contracts/sync-golden.json"},
+    {"repo":"web","kind":"fixtures","path":"sync-api-nest/web/tests/fixtures/sync-golden.json"},
+    {"repo":"sync-app-swift","kind":"fixtures","path":"sync-app-swift/Tests/SyncCoreTests/Fixtures/sync-golden.json"},
+    {"repo":"sync-app-android","kind":"fixtures","path":"sync-app-android/app/src/test/resources/sync-golden.json"},
+    {"repo":"sync-app-windows","kind":"fixtures","path":"sync-app-windows/tests/Sync.Contracts.Tests/Fixtures/sync-golden.json"}
+  ]
+}
