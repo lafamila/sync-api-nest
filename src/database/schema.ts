@@ -1,3 +1,5 @@
+import { NATIVE_PLATFORMS, SESSION_PLATFORMS } from '../generated/sync-wire';
+
 export const SCHEMA_SQL = `
 create table if not exists sync_schema_migrations (
   version integer primary key,
@@ -83,4 +85,37 @@ alter table sync_remote_sessions add column if not exists runtime_namespace text
 alter table sync_remote_sessions add column if not exists signaling_instance_id uuid not null default '00000000-0000-0000-0000-000000000000';
 
 insert into sync_schema_migrations(version) values (1) on conflict do nothing;
+
+do $$ begin
+  if not exists(select 1 from sync_schema_migrations where version=2) then
+    alter table sync_auth_sessions drop constraint sync_auth_sessions_platform_check;
+    alter table sync_auth_sessions add constraint sync_auth_sessions_platform_check
+      check (platform in (${SESSION_PLATFORMS.map((v) => `'${v}'`).join(',')}));
+    alter table sync_devices drop constraint sync_devices_platform_check;
+    alter table sync_devices add constraint sync_devices_platform_check
+      check (platform in (${NATIVE_PLATFORMS.map((v) => `'${v}'`).join(',')}));
+    alter table sync_devices add column protocol_version integer not null default 1 check(protocol_version >= 1);
+    alter table sync_devices add column client_version text;
+    alter table sync_devices add column capabilities jsonb not null default '[]'::jsonb;
+    alter table sync_remote_sessions add column protocol_version integer not null default 1;
+    alter table sync_remote_sessions add column capabilities jsonb not null default '[]'::jsonb;
+    alter table sync_remote_sessions add column host_endpoint_id text;
+    alter table sync_remote_sessions add column activity_token_hash text;
+    alter table sync_remote_sessions add column last_activity_at timestamptz;
+    alter table sync_remote_sessions add column idle_deadline timestamptz;
+    alter table sync_remote_sessions add column recovery_consumed boolean not null default false;
+    insert into sync_schema_migrations(version) values(2);
+  end if;
+end $$;
+
+do $$ begin
+  if not exists(select 1 from sync_schema_migrations where version=3) then
+    alter table sync_remote_sessions add column authorization_grant_id uuid references sync_device_grants(id);
+    alter table sync_remote_sessions add column connection_deadline timestamptz;
+    alter table sync_remote_sessions add column connected_at timestamptz;
+    create index sync_remote_sessions_unconnected_idx on sync_remote_sessions(connection_deadline)
+      where ended_at is null and connected_at is null and connection_deadline is not null;
+    insert into sync_schema_migrations(version) values(3);
+  end if;
+end $$;
 `;

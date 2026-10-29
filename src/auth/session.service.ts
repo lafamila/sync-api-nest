@@ -11,7 +11,7 @@ import { OidcCompleteDto, OidcStartDto } from './session.dto';
 import { SessionRepository, StoredSession } from './session.repository';
 
 interface LoginTransaction {
-  id: string; state: string; oidcVerifier: string; platform: 'web' | 'macos' | 'ios';
+  id: string; state: string; oidcVerifier: string; platform: AuthSessionContext['platform'];
   appChallenge?: string; status: 'pending' | 'processing' | 'completed' | 'failed';
   browserBindingHash?: string;
   handoffCodeHash?: string;
@@ -20,7 +20,7 @@ interface LoginTransaction {
 }
 
 export interface CallbackResult {
-  platform: 'web' | 'macos' | 'ios';
+  platform: AuthSessionContext['platform'];
   transactionId: string;
   sessionToken?: string;
   csrfToken?: string;

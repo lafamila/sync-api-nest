@@ -10,6 +10,7 @@ const endedSession: RemoteSession = {
   authSessionId: 'auth-1', createdAt: '2026-10-28T01:29:00.000Z', expiresAt: '2030-01-01T00:00:00.000Z',
   endedAt: '2026-10-28T01:30:31.500Z', endReason: 'controller_disconnected',
   runtimeNamespace: 'sync:test', signalingInstanceId: 'instance-1',
+  protocolVersion:1,capabilities:[],hostEndpointId:null,lastActivityAt:null,idleDeadline:null,
 };
 
 function fixture(session: RemoteSession | undefined = endedSession) {

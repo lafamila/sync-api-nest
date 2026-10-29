@@ -15,6 +15,13 @@ function service(overrides: Partial<SyncConfig> = {}) {
 }
 
 describe('OIDC browser endpoint configuration', () => {
+  it.each(['android','windows'] as const)('starts %s only through native verifier handoff', async(platform)=>{
+    const {sessions}=service();
+    await expect(sessions.start({platform})).rejects.toThrow('Native login requires');
+    const started=await sessions.start({platform,challenge:'x'.repeat(43),returnUri:'sync://auth'});
+    expect(started.browserBinding).toBeUndefined();
+    expect(new URL(started.authorizeUrl).searchParams.get('code_challenge_method')).toBe('S256');
+  });
   it('defaults to the configured issuer', async () => {
     const { sessions } = service();
     const result = await sessions.start({ platform: 'web' });

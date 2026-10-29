@@ -1,14 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
+import { NATIVE_PLATFORMS } from '../generated/sync-wire';
+import { DeviceMetadataDto } from './device.dto';
 
 interface DeviceRow {
-  id: string; owner_account_id: string; name: string; platform: 'macos' | 'ios';
+  id: string; owner_account_id: string; name: string; platform: (typeof NATIVE_PLATFORMS)[number];
+  protocol_version: number; client_version: string | null; capabilities: string[];
   public_key_der: Buffer; created_at: Date; last_seen_at: Date | null; revoked_at: Date | null;
 }
 
 export interface Device {
-  id: string; ownerAccountId: string; name: string; platform: 'macos' | 'ios';
+  id: string; ownerAccountId: string; name: string; platform: (typeof NATIVE_PLATFORMS)[number];
+  protocolVersion: number; clientVersion: string | null; capabilities: string[];
   publicKeyDer: Buffer; createdAt: string; lastSeenAt: string | null;
 }
 
@@ -25,13 +29,22 @@ export interface DeviceGrant {
 export class DeviceRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async create(ownerAccountId: string, input: { name: string; platform: 'macos' | 'ios'; publicKeyDer: Buffer }): Promise<Device> {
+  async create(ownerAccountId: string, input: DeviceMetadataDto & { name: string; platform: Device['platform']; publicKeyDer: Buffer }): Promise<Device> {
     const result = await this.db.query<DeviceRow>(
-      `insert into sync_devices(id,owner_account_id,name,platform,public_key_der)
-       values($1,$2,$3,$4,$5) returning *`,
-      [randomUUID(), ownerAccountId, input.name.trim(), input.platform, input.publicKeyDer],
+      `insert into sync_devices(id,owner_account_id,name,platform,public_key_der,protocol_version,client_version,capabilities)
+       values($1,$2,$3,$4,$5,$6,$7,$8::jsonb) returning *`,
+      [randomUUID(), ownerAccountId, input.name.trim(), input.platform, input.publicKeyDer,
+        input.protocolVersion ?? 1, input.clientVersion ?? null, JSON.stringify(input.capabilities ?? [])],
     );
     return mapDevice(result.rows[0]!);
+  }
+
+  async updateCapabilities(ownerId: string, id: string, metadata: DeviceMetadataDto): Promise<Device | undefined> {
+    const result = await this.db.query<DeviceRow>(
+      `update sync_devices set protocol_version=$3,client_version=$4,capabilities=$5::jsonb
+       where id=$1 and owner_account_id=$2 and revoked_at is null returning *`,
+      [id, ownerId, metadata.protocolVersion ?? 1, metadata.clientVersion ?? null, JSON.stringify(metadata.capabilities ?? [])]);
+    return result.rows[0] ? mapDevice(result.rows[0]) : undefined;
   }
 
   async listOwned(ownerAccountId: string): Promise<Device[]> {
@@ -111,6 +124,7 @@ export class DeviceRepository {
 
 function mapDevice(row: DeviceRow): Device {
   return { id: row.id, ownerAccountId: row.owner_account_id, name: row.name, platform: row.platform,
+    protocolVersion: row.protocol_version ?? 1, clientVersion: row.client_version ?? null, capabilities: row.capabilities ?? [],
     publicKeyDer: row.public_key_der, createdAt: row.created_at.toISOString(), lastSeenAt: row.last_seen_at?.toISOString() ?? null };
 }
 function mapGrant(row: GrantRow): DeviceGrant {

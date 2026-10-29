@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Send,
   Shrink,
+  Monitor,
 } from "lucide-react";
 import {
   type CompositionEvent,
@@ -27,6 +28,7 @@ import {
 } from "react";
 import type { RemoteConnection } from "./remoteConnection";
 import { remoteTextEdit, wireTextChunks } from "./remoteTextInput";
+import { SYNC_KEYS } from "./generated/sync-wire";
 import type {
   Account,
   ConnectionMetrics,
@@ -34,6 +36,7 @@ import type {
   Device,
   Modifier,
   RemoteSession,
+  DisplayState,
 } from "./types";
 
 interface RemoteConsoleProps {
@@ -47,6 +50,7 @@ interface RemoteConsoleProps {
   phase: ConnectionPhase;
   session: RemoteSession;
   stream: MediaStream | null;
+  displays: DisplayState;
 }
 
 interface Point {
@@ -69,21 +73,8 @@ const MODIFIER_KEYS: Array<{ modifier: Modifier; label: string }> = [
   { modifier: "shift", label: "Shift" },
 ];
 
-const SPECIAL_KEYS = new Set([
-  "Enter",
-  "Backspace",
-  "Tab",
-  "Escape",
-  "Delete",
-  "ArrowLeft",
-  "ArrowRight",
-  "ArrowUp",
-  "ArrowDown",
-  "Home",
-  "End",
-  "PageUp",
-  "PageDown",
-]);
+const WIRE_KEYS = new Set<string>(SYNC_KEYS);
+const SPECIAL_KEYS = new Set<string>(SYNC_KEYS.filter(key => !key.startsWith("Key") && !key.startsWith("Digit")));
 
 const PHYSICAL_MODIFIER_CODES = new Set([
   "MetaLeft",
@@ -126,7 +117,7 @@ function phaseLabel(phase: ConnectionPhase): string {
 }
 
 export function RemoteConsole(props: RemoteConsoleProps) {
-  const { account, connection, error, host, metrics, onEnd, onLogout, phase, session, stream } = props;
+  const { account, connection, error, host, metrics, onEnd, onLogout, phase, session, stream, displays } = props;
   const [fit, setFit] = useState<FitMode>("fit");
   const [zoom, setZoom] = useState(1);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -227,8 +218,9 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }
 
   function pointerDown(event: PointerEvent<HTMLDivElement>) {
+    if ((event.target as Element).closest("button,select,label,input")) return;
+    if (session.scope === "view") connection.userActivity();
     if (!authorized) return;
-    if ((event.target as Element).closest("button")) return;
     event.currentTarget.focus();
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -387,6 +379,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     const modifiers = currentModifiers(event);
     const hasCommandModifier = modifiers.some((modifier) => modifier !== "shift");
     const key = SPECIAL_KEYS.has(event.key) ? event.key : event.code;
+    if (!WIRE_KEYS.has(key)) return;
     if (!down) {
       if (!forwardedKeysRef.current.delete(key)) return;
       event.preventDefault();
@@ -509,6 +502,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
           onPointerUp={pointerUp}
           onPointerCancel={pointerCancel}
           onWheel={wheel}
+          onKeyDown={() => { if (session.scope === "view") connection.userActivity(); }}
           aria-label={`${host.name} remote screen`}
           data-testid="video-stage"
         >
@@ -529,6 +523,16 @@ export function RemoteConsole(props: RemoteConsoleProps) {
             </div>
           )}
           <div className="stage-controls">
+            {connection.supportsDisplays && (
+              <label className="display-picker" title="Display">
+                <Monitor />
+                <select aria-label="Display" value={displays.selectedDisplayId ?? ""} disabled={displays.busy || phase !== "connected"}
+                  onChange={event => connection.selectDisplay(event.target.value)}>
+                  {displays.displays.length === 0 && <option value="">Display</option>}
+                  {displays.displays.map(display => <option key={display.id} value={display.id}>{display.name}</option>)}
+                </select>
+              </label>
+            )}
             <div className="segmented icon-segmented" aria-label="Video fit">
               <button className={fit === "fit" ? "active" : ""} title="Fit screen" aria-label="Fit screen" onClick={() => setFit("fit")}><Shrink /></button>
               <button className={fit === "fill" ? "active" : ""} title="Fill screen" aria-label="Fill screen" onClick={() => setFit("fill")}><Maximize2 /></button>
@@ -540,6 +544,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
               {fullscreen ? <Minimize2 /> : <Expand />}
             </button>
           </div>
+          {displays.busy && <span className="display-status" role="status">Switching display</span>}
         </div>
 
         <aside className="metrics-panel" aria-label="Connection metrics">

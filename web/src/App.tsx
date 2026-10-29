@@ -2,6 +2,7 @@ import {
   ArrowRight,
   CircleAlert,
   Laptop,
+  Monitor,
   LoaderCircle,
   LogIn,
   LogOut,
@@ -11,7 +12,8 @@ import {
   Wifi,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, supportsV2 } from "./api";
+import { BrowserAccess } from "./browserAccess";
 import { RemoteConsole } from "./RemoteConsole";
 import { RemoteConnection } from "./remoteConnection";
 import type {
@@ -20,6 +22,8 @@ import type {
   ConnectionPhase,
   Device,
   RemoteSession,
+  PublicConfig,
+  DisplayState,
 } from "./types";
 
 type AuthState = "checking" | "guest" | "authenticated" | "forbidden";
@@ -35,6 +39,7 @@ interface ActiveAccess {
   host: Device;
   pin: string;
   scope: "view" | "control";
+  lease: BrowserAccess;
 }
 
 interface ReconnectTask {
@@ -88,6 +93,21 @@ function retryableReconnectError(error: unknown): boolean {
     : error instanceof TypeError;
 }
 
+function waitForVisible(signal: AbortSignal): Promise<void> {
+  if (signal.aborted || document.visibilityState === "visible") return Promise.resolve();
+  return new Promise(resolve => {
+    const finish = () => {
+      if (!signal.aborted && document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", finish);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    document.addEventListener("visibilitychange", finish);
+    signal.addEventListener("abort", finish, { once: true });
+    finish();
+  });
+}
+
 export function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [account, setAccount] = useState<Account | null>(null);
@@ -107,6 +127,8 @@ export function App() {
   const [phase, setPhase] = useState<ConnectionPhase>("idle");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [metrics, setMetrics] = useState<ConnectionMetrics>(EMPTY_METRICS);
+  const [displayState, setDisplayState] = useState<DisplayState>({ displays: [], selectedDisplayId: null, busy: false, error: null });
+  const configRef = useRef<PublicConfig | null>(null);
   const liveRef = useRef<LiveConnection | null>(null);
   const activeAccessRef = useRef<ActiveAccess | null>(null);
   const generationRef = useRef(0);
@@ -118,11 +140,13 @@ export function App() {
       const result = await api.devices();
       setDevices(
         result.devices.filter(
-          (device) => device.platform === "macos" && device.online,
+          (device) => (device.platform === "macos" || device.platform === "windows") && device.online,
         ),
       );
     } catch (nextError) {
       if (nextError instanceof ApiError && nextError.status === 401) {
+        activeAccessRef.current?.lease.clear();
+        activeAccessRef.current = null;
         setAuthState("guest");
         setAccount(null);
       } else {
@@ -135,6 +159,7 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    void api.config().then(config => { if (active) configRef.current = config; }).catch(nextError => { if (active) setError(readableError(nextError)); });
     void api
       .me()
       .then(({ account: nextAccount }) => {
@@ -175,6 +200,7 @@ export function App() {
       generationRef.current += 1;
       reconnectTaskRef.current?.abort.abort();
       reconnectTaskRef.current = null;
+      activeAccessRef.current?.lease.clear();
       activeAccessRef.current = null;
       liveRef.current?.connection.dispose();
     },
@@ -184,20 +210,30 @@ export function App() {
   useEffect(() => {
     const foreground = () => {
       if (document.visibilityState !== "visible") return;
+      if (activeAccessRef.current?.lease.expired()) {
+        finishTerminalSession(generationRef.current, "Remote access expired. Enter a new access code.");
+        return;
+      }
+      if (reconnectTaskRef.current) return;
       const current = liveRef.current;
+      if (current && !current.connection.checkAuthorization()) return;
       if (current?.connection.inputHeartbeatExpired()) {
         current.connection.requestRecovery("Input heartbeat paused while the page was in the background");
       } else current?.connection.resumeInputHeartbeat();
     };
     const visibility = () => {
-      if (document.visibilityState === "hidden") liveRef.current?.connection.suspendInputHeartbeat();
+      if (document.visibilityState !== "visible") liveRef.current?.connection.requestRecovery("The page was hidden");
       else foreground();
     };
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("focus", foreground);
     window.addEventListener("online", foreground);
     window.addEventListener("pageshow", foreground);
+    const idleTimer = window.setInterval(() => {
+      if (activeAccessRef.current?.lease.expired()) finishTerminalSession(generationRef.current, "Remote access expired. Enter a new access code.");
+    }, 500);
     return () => {
+      window.clearInterval(idleTimer);
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("focus", foreground);
       window.removeEventListener("online", foreground);
@@ -227,6 +263,11 @@ export function App() {
   }
 
   function installConnection(result: Awaited<ReturnType<typeof api.connect>>, access: ActiveAccess, generation: number) {
+    if (document.visibilityState !== "visible" || access.lease.expired()) {
+      void api.endSession(result.session.id).catch(() => undefined);
+      finishTerminalSession(generation,"Remote access closed. Enter a new access code.");
+      return;
+    }
     let connection!: RemoteConnection;
     connection = new RemoteConnection(result.session, result.iceServers, {
       onMetrics: (nextMetrics) => {
@@ -244,6 +285,9 @@ export function App() {
       onSessionEnded: (reason) => {
         if (isCurrent(generation, connection)) finishTerminalSession(generation, reason);
       },
+      onDisplays: state => { if (isCurrent(generation,connection)) setDisplayState(state); },
+      onActivity: () => { if (isCurrent(generation,connection)) void recordUserActivity(generation); },
+      hasAuthority: () => generationRef.current === generation && activeAccessRef.current === access && !access.lease.expired(),
     });
     const nextLive = { connection, session: result.session, host: access.host, generation };
     liveRef.current = nextLive;
@@ -251,6 +295,7 @@ export function App() {
     setPhase("signaling");
     setStream(null);
     setMetrics(EMPTY_METRICS);
+    setDisplayState({ displays: [], selectedDisplayId: null, busy: false, error: null });
     setError(null);
     void connection.start(result.ticket);
   }
@@ -260,23 +305,44 @@ export function App() {
     generationRef.current += 1;
     reconnectTaskRef.current?.abort.abort();
     reconnectTaskRef.current = null;
+    activeAccessRef.current?.lease.clear();
     activeAccessRef.current = null;
     setPin("");
     const current = liveRef.current;
     current?.connection.releaseAll();
     current?.connection.dispose();
+    if (current) void api.endSession(current.session.id).catch(() => undefined);
     liveRef.current = null;
     setLive(null);
     setSelected(null);
     setStream(null);
     setPhase("ended");
-    setError(reason);
+    setError(reason === "idle_timeout" ? "Remote access expired. Enter a new access code." : reason);
+  }
+
+  async function recordUserActivity(generation: number) {
+    const access = activeAccessRef.current;
+    const current = liveRef.current;
+    if (!access || !current || generationRef.current !== generation) return;
+    if (access.lease.expired()) { finishTerminalSession(generation,"Remote access expired. Enter a new access code."); return; }
+    const token = access.lease.recordActivity();
+    if (!token) return;
+    try {
+      const state = await api.activity(current.session.id,token);
+      if (!isCurrent(generation,current.connection) || activeAccessRef.current !== access) return;
+      if (!access.lease.finishActivity(state)) finishTerminalSession(generation,"Remote access expired. Enter a new access code.");
+    } catch (nextError) {
+      if (!isCurrent(generation,current.connection) || activeAccessRef.current !== access) return;
+      access.lease.finishActivity();
+      if (nextError instanceof ApiError && [401,403,404,410,426].includes(nextError.status)) finishTerminalSession(generation,readableError(nextError));
+    }
   }
 
   function beginReconnect(sourceGeneration: number, _reason: string) {
     if (generationRef.current !== sourceGeneration || !activeAccessRef.current || reconnectTaskRef.current) return;
     const current = liveRef.current;
     if (!current || current.generation !== sourceGeneration) return;
+    if (activeAccessRef.current.lease.expired()) { finishTerminalSession(sourceGeneration,"Remote access expired. Enter a new access code."); return; }
 
     const generation = sourceGeneration + 1;
     generationRef.current = generation;
@@ -295,6 +361,28 @@ export function App() {
   }
 
   async function reconnect(generation: number, oldSessionId: string, signal: AbortSignal) {
+    await waitForVisible(signal);
+    if (signal.aborted || generationRef.current !== generation) return;
+    const originalAccess = activeAccessRef.current;
+    if (!originalAccess) return;
+    if (originalAccess.lease.expired()) { finishTerminalSession(generation,"Remote access expired. Enter a new access code."); return; }
+    if (supportsV2(originalAccess.lease.config)) {
+      const token = originalAccess.lease.takeRecoveryToken();
+      if (!token) { finishReconnectFailure(generation,new Error("Remote access expired. Enter a new access code."),false); return; }
+      try {
+        const result = await api.recover(oldSessionId,token,originalAccess.lease.config,signal);
+        if (signal.aborted || generationRef.current !== generation || activeAccessRef.current !== originalAccess) {
+          void api.endSession(result.session.id).catch(() => undefined);
+          return;
+        }
+        try { originalAccess.lease.recovered(result); }
+        catch (nextError) { void api.endSession(result.session.id).catch(() => undefined); throw nextError; }
+        installConnection(result,originalAccess,generation);
+      } catch (nextError) {
+        if (!signal.aborted && generationRef.current === generation) finishReconnectFailure(generation,nextError,nextError instanceof ApiError && nextError.status === 401);
+      }
+      return;
+    }
     await Promise.race([
       api.endSession(oldSessionId).catch(() => undefined),
       waitFor(750, signal),
@@ -302,16 +390,20 @@ export function App() {
 
     for (let attempt = 0; attempt < RECONNECT_BACKOFF_MS.length; attempt += 1) {
       await waitFor(RECONNECT_BACKOFF_MS[attempt], signal);
+      await waitForVisible(signal);
       if (signal.aborted || generationRef.current !== generation) return;
       const access = activeAccessRef.current;
       if (!access) return;
+      if (access.lease.expired()) { finishTerminalSession(generation,"Remote access expired. Enter a new access code."); return; }
 
       try {
-        const result = await api.connect(access.host.id, access.pin, access.scope, signal);
+        const result = await api.connect(access.host.id, access.pin, access.scope, access.lease.config, signal);
         if (signal.aborted || generationRef.current !== generation || !activeAccessRef.current) {
           void api.endSession(result.session.id).catch(() => undefined);
           return;
         }
+        try { access.lease.recovered(result); }
+        catch (nextError) { void api.endSession(result.session.id).catch(() => undefined); throw nextError; }
         installConnection(result, access, generation);
         return;
       } catch (nextError) {
@@ -335,6 +427,7 @@ export function App() {
     generationRef.current += 1;
     reconnectTaskRef.current?.abort.abort();
     reconnectTaskRef.current = null;
+    activeAccessRef.current?.lease.clear();
     activeAccessRef.current = null;
     setPin("");
     liveRef.current?.connection.dispose();
@@ -352,8 +445,9 @@ export function App() {
   }
 
   async function connect() {
-    if (!selected || !/^\d{6}$/.test(pin)) return;
-    const access: ActiveAccess = { host: selected, pin, scope };
+    if (!selected || !/^\d{6}$/.test(pin) || submitting) return;
+    const pending = { host: selected, pin, scope };
+    const generation = ++generationRef.current;
     setSubmitting(true);
     setError(null);
     setPhase("signaling");
@@ -361,14 +455,20 @@ export function App() {
     setStream(null);
 
     try {
-      const result = await api.connect(access.host.id, access.pin, access.scope);
-      const generation = generationRef.current + 1;
-      generationRef.current = generation;
+      const config = configRef.current ?? await api.config();
+      configRef.current = config;
+      const result = await api.connect(pending.host.id, pending.pin, pending.scope, config);
+      if (generationRef.current !== generation) { void api.endSession(result.session.id).catch(() => undefined); return; }
+      let lease: BrowserAccess;
+      try { lease = new BrowserAccess(config,result); }
+      catch (nextError) { void api.endSession(result.session.id).catch(() => undefined); throw nextError; }
+      const access: ActiveAccess = { ...pending, pin: supportsV2(config) ? "" : pending.pin, lease };
       activeAccessRef.current = access;
       setPin("");
       setSelected(null);
       installConnection(result, access, generation);
     } catch (nextError) {
+      if (generationRef.current !== generation) return;
       setError(readableError(nextError));
       setPhase("failed");
       setPin("");
@@ -388,6 +488,7 @@ export function App() {
     generationRef.current += 1;
     reconnectTaskRef.current?.abort.abort();
     reconnectTaskRef.current = null;
+    activeAccessRef.current?.lease.clear();
     activeAccessRef.current = null;
     setPin("");
     current.connection.releaseAll();
@@ -409,6 +510,7 @@ export function App() {
     generationRef.current += 1;
     reconnectTaskRef.current?.abort.abort();
     reconnectTaskRef.current = null;
+    activeAccessRef.current?.lease.clear();
     activeAccessRef.current = null;
     setPin("");
     current?.connection.releaseAll();
@@ -479,6 +581,7 @@ export function App() {
         session={live.session}
         stream={stream}
         error={error}
+        displays={displayState}
       />
     );
   }
@@ -502,7 +605,7 @@ export function App() {
         <div className="section-heading">
           <div>
             <span className="eyebrow">Available hosts</span>
-            <h1>Online Macs</h1>
+            <h1>Online desktops</h1>
           </div>
           <button
             className="icon-button"
@@ -525,7 +628,7 @@ export function App() {
         ) : devices.length === 0 ? (
           <div className="empty-state">
             <MonitorOff />
-            <strong>No online Macs</strong>
+            <strong>No online desktops</strong>
           </div>
         ) : (
           <div className="device-list">
@@ -542,7 +645,7 @@ export function App() {
                     setPin("");
                   }}
                 >
-                  <span className="device-icon"><Laptop /></span>
+                  <span className="device-icon">{device.platform === "windows" ? <Monitor /> : <Laptop />}</span>
                   <span className="device-copy">
                     <strong>{device.name}</strong>
                     <span>
@@ -567,7 +670,7 @@ export function App() {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="dialog-device">
-              <span className="device-icon"><Laptop /></span>
+              <span className="device-icon">{selected.platform === "windows" ? <Monitor /> : <Laptop />}</span>
               <div>
                 <span className="eyebrow">Connect to</span>
                 <h2 id="connect-title">{selected.name}</h2>

@@ -1,4 +1,5 @@
 dist/
+.omx/
 artifacts/
 node_modules/
 playwright-report/

@@ -1,12 +1,10 @@
-import { Pool } from 'pg';
-import { loadConfig } from '../config/app-config';
-import { SCHEMA_SQL } from './schema';
+import { SyncConfigService } from '../config/config.service';
+import { DatabaseService } from './database.service';
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-  const pool = new Pool({ connectionString: config.databaseUrl, ssl: config.databaseSsl ? { rejectUnauthorized: false } : undefined });
-  try { await pool.query(SCHEMA_SQL); }
-  finally { await pool.end(); }
+  const database = new DatabaseService(new SyncConfigService());
+  try { await database.migrate(); }
+  finally { await database.onApplicationShutdown(); }
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

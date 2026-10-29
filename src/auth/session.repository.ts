@@ -7,7 +7,7 @@ import { DatabaseService } from '../database/database.service';
 
 interface SessionRow {
   id: string; token_hash: string; csrf_hash: string; account_id: string; account_name: string;
-  permission: 'member' | 'superadmin'; platform: 'web' | 'macos' | 'ios';
+  permission: 'member' | 'superadmin'; platform: AuthSessionContext['platform'];
   access_token_encrypted: string; refresh_token_encrypted: string; access_token_expires_at: Date;
   created_at: Date; last_seen_at: Date; expires_at: Date; revoked_at: Date | null;
   auth_checked_at: Date;
@@ -28,7 +28,7 @@ export class SessionRepository {
   constructor(private readonly db: DatabaseService, private readonly config: SyncConfigService) {}
 
   async create(input: {
-    token: string; csrfToken: string; account: Account; platform: 'web' | 'macos' | 'ios';
+    token: string; csrfToken: string; account: Account; platform: AuthSessionContext['platform'];
     accessToken: string; refreshToken: string; accessTokenExpiresAt: Date;
   }): Promise<string> {
     const id = randomUUID();
@@ -49,7 +49,7 @@ export class SessionRepository {
     const result = await this.db.query<SessionRow>(
       `select * from sync_auth_sessions
        where token_hash=$1 and revoked_at is null and expires_at > now()
-       and (($2='web' and platform='web') or ($2='native' and platform in ('macos','ios')))`, [sha256(token), source],
+       and (($2='web' and platform='web') or ($2='native' and platform<>'web'))`, [sha256(token), source],
     );
     const row = result.rows[0];
     return row ? mapSession(row, token, source) : undefined;

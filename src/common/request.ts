@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { SESSION_PLATFORMS } from '../generated/sync-wire';
 
 export interface Account {
   id: string;
@@ -12,7 +13,7 @@ export interface AuthSessionContext {
   source: 'web' | 'native';
   csrfHash: string;
   account: Account;
-  platform: 'web' | 'macos' | 'ios';
+  platform: (typeof SESSION_PLATFORMS)[number];
 }
 
 export interface AuthenticatedRequest extends Request {

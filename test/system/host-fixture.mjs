@@ -28,20 +28,27 @@ const socketUrl=new URL('/api/signaling',api);
 socketUrl.protocol=socketUrl.protocol==='https:'?'wss:':'ws:';
 socketUrl.searchParams.set('ticket',fixture.ticket);
 const forceRelay=fixture.forceRelay===true;
-window.__hostReady=false; window.__messages=[]; window.__channels=[]; window.__ended=[]; window.__peer=null;
+window.__hostReady=false; window.__messages=[]; window.__channels=[]; window.__ended=[]; window.__peer=null; window.__sessions=[]; window.__errors=[];
 const canvas=document.querySelector('#source'); const context=canvas.getContext('2d'); let frame=0;
 setInterval(()=>{ frame+=1; context.fillStyle=frame%2?'#145c4b':'#173b47'; context.fillRect(0,0,640,360);
   context.fillStyle='#ffffff'; context.font='36px sans-serif'; context.fillText('Sync system '+frame,130,190); },80);
 const stream=canvas.captureStream(12); const socket=new WebSocket(socketUrl); let currentSession=null; let pending=[];
-socket.onopen=()=>{window.__hostReady=true};
 socket.onclose=()=>{window.__socketClosed=true};
-socket.onmessage=async(event)=>{
+socket.onmessage=(event)=>{void handleSignal(event).catch((error)=>window.__errors.push(error.message));};
+async function handleSignal(event) {
   const message=JSON.parse(event.data);
+  if(message.type==='ready') { window.__hostReady=true; return; }
+  if(message.type==='ping') { socket.send(JSON.stringify({type:'pong'})); return; }
   if(message.type==='session-start') { await createPeer(message.session,message.iceServers); return; }
-  if(message.type==='session-ended') { window.__ended.push(message); window.__peer?.close(); window.__peer=null; currentSession=null; return; }
+  if(message.type==='session-ended') { window.__ended.push(message);
+    if(message.sessionId===currentSession?.id) { window.__peer?.close(); window.__peer=null; currentSession=null; } return; }
   const peer=window.__peer;
   if(!peer || message.sessionId!==currentSession?.id) return;
-  if(message.type==='offer') {
+  if(message.type==='get-displays') {
+    socket.send(JSON.stringify({type:'displays',sessionId:currentSession.id,
+      displays:[{id:'fixture-primary',name:'Fixture display',width:640,height:360,isPrimary:true}],
+      selectedDisplayId:'fixture-primary',inputEpoch:currentSession.epoch}));
+  } else if(message.type==='offer') {
     await peer.setRemoteDescription({type:'offer',sdp:message.sdp});
     for(const candidate of pending.splice(0)) await peer.addIceCandidate(candidate);
     const answer=await peer.createAnswer(); await peer.setLocalDescription(answer);
@@ -49,9 +56,10 @@ socket.onmessage=async(event)=>{
   } else if(message.type==='ice' && message.candidate) {
     if(peer.remoteDescription) await peer.addIceCandidate(message.candidate); else pending.push(message.candidate);
   }
-};
+}
 async function createPeer(session,iceServers) {
   window.__peer?.close(); currentSession=session; pending=[];
+  window.__sessions.push(session); window.__messages=[]; window.__channels=[];
   const peer=new RTCPeerConnection({iceServers,iceTransportPolicy:forceRelay?'relay':'all'}); window.__peer=peer;
   peer.addTrack(stream.getVideoTracks()[0],stream);
   peer.ondatachannel=(event)=>{ const channel=event.channel;

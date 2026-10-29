@@ -1,44 +1,19 @@
-export type Permission = "member" | "superadmin";
+import type { WireAccount, WireMode, WireDevice, WireRemoteSession, WireICEServer, WireConnectResult, WirePublicConfig, WireFeatureFlags, WireDisplay } from "./generated/sync-wire";
 
-export interface Account {
-  id: string;
-  name: string;
-  permission: Permission;
-}
+export type Permission = WireAccount["permission"];
+export type Account = WireAccount;
+export type AccessMode = WireMode;
+export type Device = WireDevice;
+export type RemoteSession = WireRemoteSession;
+export type IceServer = WireICEServer;
+export type ConnectResponse = WireConnectResult;
+export type PublicConfig = WirePublicConfig & { protocolVersion: number; minimumProtocolVersion: number; minimumWebProtocolVersion: number; capabilities: string[]; features: Required<WireFeatureFlags> };
 
-export interface AccessMode {
-  epoch: string;
-  expiresAt: string;
-  allowBrowser: boolean;
-}
-
-export interface Device {
-  id: string;
-  name: string;
-  platform: "macos" | "ios";
-  online: boolean;
-  mode: AccessMode | null;
-}
-
-export interface RemoteSession {
-  id: string;
-  hostId: string;
-  controllerId: string;
-  scope: "view" | "control";
-  epoch: string;
-  expiresAt: string;
-}
-
-export interface IceServer {
-  urls: string[];
-  username?: string;
-  credential?: string;
-}
-
-export interface ConnectResponse {
-  session: RemoteSession;
-  ticket: string;
-  iceServers: IceServer[];
+export interface DisplayState {
+  displays: WireDisplay[];
+  selectedDisplayId: string | null;
+  busy: boolean;
+  error: string | null;
 }
 
 export type ConnectionPhase =
@@ -70,4 +45,4 @@ export type ControlPayload =
   | { type: "key"; key: string; down: boolean; modifiers: Modifier[] }
   | { type: "text"; text: string };
 
-export type DataMessage = ControlPayload & { seq: number; epoch: string };
+export type DataMessage = ControlPayload & { seq: number; epoch: string; inputEpoch?: string };

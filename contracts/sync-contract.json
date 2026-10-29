@@ -9,13 +9,14 @@
     "minimumWebProtocolVersion": 2,
     "nativePlatforms": ["macos", "ios", "android", "windows"],
     "sessionPlatforms": ["web", "macos", "ios", "android", "windows"],
-    "capabilities": ["screen-host", "input-host", "host-displays", "viewer-displays", "multi-window", "mode-duration"],
+    "capabilities": ["screen-host", "input-host", "host-displays", "viewer-displays", "multi-window", "mode-duration", "bounded-lifetime"],
     "limits": {
       "maxDisplays": 32, "maxDisplayIdLength": 128, "maxDisplayNameLength": 256,
       "maxDisplayDimension": 32768, "maxTextUtf8Bytes": 4096, "maxScrollDelta": 100, "maxSdpLength": 120000, "maxIceCandidateLength": 8192, "maxSignalBytes": 131072,
-      "maxSequence": 9007199254740991, "maxClientVersionLength": 64, "maxCapabilities": 6,
+      "maxSequence": 9007199254740991, "maxClientVersionLength": 64, "maxCapabilities": 7,
       "minimumModeSeconds": 300, "defaultModeSeconds": 43200, "maximumModeSeconds": 604800, "defaultMaximumModeSeconds": 86400,
-      "webIdleTimeoutSeconds": 900, "displaySelectionTimeoutSeconds": 10, "displayRecoveryTimeoutSeconds": 5
+      "webIdleTimeoutSeconds": 900, "displaySelectionTimeoutSeconds": 10, "displayRecoveryTimeoutSeconds": 5,
+      "signalingPingIntervalSeconds": 5, "signalingLivenessTimeoutSeconds": 15
     },
     "proofs": {"registration": "sync:register", "device": "sync:device"},
     "directions": {"get-displays": "controller-to-host", "select-display": "controller-to-host", "displays": "host-to-controller", "display-error": "host-to-controller"}
@@ -25,8 +26,8 @@
     "ISODate": {"type":"string", "format":"date-time"},
     "NativePlatform": {"type":"string", "enum":["macos","ios","android","windows"]},
     "SessionPlatform": {"type":"string", "enum":["web","macos","ios","android","windows"]},
-    "Capability": {"type":"string", "enum":["screen-host","input-host","host-displays","viewer-displays","multi-window","mode-duration"]},
-    "Capabilities": {"type":"array", "items":{"$ref":"#/$defs/Capability"}, "maxItems":6, "uniqueItems":true, "default":[]},
+    "Capability": {"type":"string", "enum":["screen-host","input-host","host-displays","viewer-displays","multi-window","mode-duration","bounded-lifetime"]},
+    "Capabilities": {"type":"array", "items":{"$ref":"#/$defs/Capability"}, "maxItems":7, "uniqueItems":true, "default":[]},
     "ProtocolVersion": {"type":"integer", "minimum":1, "maximum":2, "default":1},
     "DisplayId": {"type":"string", "minLength":1, "maxLength":128, "pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "Key": {"type":"string", "enum":["Enter","Backspace","Tab","Escape","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Delete","Home","End","PageUp","PageDown","Space","KeyA","KeyB","KeyC","KeyD","KeyE","KeyF","KeyG","KeyH","KeyI","KeyJ","KeyK","KeyL","KeyM","KeyN","KeyO","KeyP","KeyQ","KeyR","KeyS","KeyT","KeyU","KeyV","KeyW","KeyX","KeyY","KeyZ","Digit0","Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9"]},
@@ -121,7 +122,7 @@
     "WirePublicConfig": {"type":"object", "additionalProperties":true, "properties":{
       "product":{"type":"string","default":"Sync"}, "version":{"type":"string","default":""}, "authConfigured":{"type":"boolean","default":false}, "webUrl":{"type":"string"},
       "protocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "minimumProtocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "minimumWebProtocolVersion":{"$ref":"#/$defs/ProtocolVersion"},
-      "capabilities":{"$ref":"#/$defs/Capabilities"}, "modeDuration":{"$ref":"#/$defs/WireModeDuration"}, "webIdleTimeoutSeconds":{"type":"integer","minimum":1,"maximum":604800}, "features":{"$ref":"#/$defs/WireFeatureFlags","default":{}}
+      "capabilities":{"$ref":"#/$defs/Capabilities"}, "modeDuration":{"$ref":"#/$defs/WireModeDuration"}, "webIdleTimeoutSeconds":{"type":"integer","minimum":1,"maximum":604800}, "requireBoundedHosts":{"type":"boolean"}, "features":{"$ref":"#/$defs/WireFeatureFlags","default":{}}
     }},
     "WireNativeHandoff": {"type":"object", "additionalProperties":false, "required":["transactionId","verifier","handoffCode"], "properties":{
       "transactionId":{"type":"string","minLength":24,"maxLength":128}, "verifier":{"type":"string","minLength":43,"maxLength":128}, "handoffCode":{"type":"string","minLength":24,"maxLength":128}

@@ -1,5 +1,5 @@
 {
-  "schemaHash": "80e7b59aa60cad52c8a07225aaeb5730630f52012e465c270c8a932f50322be9",
+  "schemaHash": "f02f21c72cfba82f64cd08edc54e8b200872a40cd0b06b88430f16605d67b82e",
   "description": "Public interoperable fixtures only. Never use this deterministic test key or nonce for authentication.",
   "proofs": {
     "testOnly": true,
@@ -354,7 +354,8 @@
           "host-displays",
           "viewer-displays",
           "multi-window",
-          "mode-duration"
+          "mode-duration",
+          "bounded-lifetime"
         ],
         "modeDuration": {
           "minimumSeconds": 300,
@@ -362,6 +363,7 @@
           "maximumSeconds": 86400
         },
         "webIdleTimeoutSeconds": 900,
+        "requireBoundedHosts": true,
         "features": {
           "displaySelection": true,
           "browserIdle": true,
@@ -537,6 +539,13 @@
         "capabilities": [
           "shell-access"
         ]
+      }
+    },
+    {
+      "name": "invalid-bounded-host-policy",
+      "model": "WirePublicConfig",
+      "value": {
+        "requireBoundedHosts": "false"
       }
     },
     {

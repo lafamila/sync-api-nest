@@ -1,8 +1,9 @@
 import { IsIn, IsOptional, IsString, Length, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { SESSION_PLATFORMS } from '../generated/sync-wire';
 
 export class OidcStartDto {
-  @IsIn(['web', 'macos', 'ios'])
-  platform!: 'web' | 'macos' | 'ios';
+  @IsIn(SESSION_PLATFORMS)
+  platform!: (typeof SESSION_PLATFORMS)[number];
 
   @ValidateIf((value: OidcStartDto) => value.platform !== 'web')
   @IsString()

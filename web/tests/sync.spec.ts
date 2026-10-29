@@ -33,7 +33,7 @@ async function authorize(context: BrowserContext) {
 
 async function openConnect(page: Page) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Online Macs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Online desktops" })).toBeVisible();
   await expect(page.getByText("Offline Mac")).toHaveCount(0);
   await expect(page.getByText("Test iPhone")).toHaveCount(0);
   await page.getByRole("button", { name: /Studio Mac/ }).click();
@@ -55,11 +55,11 @@ async function connectController(page: Page) {
 test("keeps devices and controls behind the server session", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Online Macs" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Online desktops" })).toHaveCount(0);
   await expect(page.getByTestId("video-stage")).toHaveCount(0);
 });
 
-test("shows only owned online Macs and enforces a six-digit code", async ({ context, page }) => {
+test("shows owned online desktops and enforces a six-digit code", async ({ context, page }) => {
   await authorize(context);
   await openConnect(page);
   const code = page.getByLabel("6-digit access code");
@@ -175,6 +175,7 @@ test("keeps wheel input within the native host's scroll limits", async ({ browse
     await authorize(context);
     await connectController(page);
     await page.getByTestId("video-stage").hover();
+    await page.mouse.wheel(80, 40);
     await page.mouse.wheel(240, -360);
 
     await expect.poll(() => host.evaluate(() =>
@@ -182,6 +183,7 @@ test("keeps wheel input within the native host's scroll limits", async ({ browse
         .filter((message) => message.type === "scroll")
         .map(({ dx, dy }) => ({ dx, dy })),
     )).toContainEqual({ dx: 100, dy: -100 });
+    expect(await host.evaluate(() => (window as unknown as { __messages: Array<{ type: string; dx?: number; dy?: number }> }).__messages.filter(message => message.type === "scroll").map(({dx,dy})=>({dx,dy})))).toContainEqual({dx:80,dy:40});
   } finally {
     await hostContext.close();
   }
@@ -375,7 +377,7 @@ test("explicitly ends a session and returns to refreshed hosts without reconnect
 
     await page.getByRole("button", { name: "End session", exact: true }).click();
     await refreshed;
-    await expect(page.getByRole("heading", { name: "Online Macs" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Online desktops" })).toBeVisible();
     await expect(page.getByTestId("video-stage")).toHaveCount(0);
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect.poll(async () => (await harnessState(page)).endedSessionIds).toContain(initial.activeSessionId);

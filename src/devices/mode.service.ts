@@ -20,7 +20,7 @@ export class ModeService {
 
   async set(account: Account, host: Device, input: { enabled: boolean; allowBrowser: boolean; ttlSeconds?: number }): Promise<{ mode: AccessMode | null; code?: string }> {
     this.assertConfigured();
-    if (input.allowBrowser && host.platform !== 'macos') throw new BadRequestException('Browser access is available only for macOS hosts');
+    if (input.allowBrowser && host.platform !== 'macos' && host.platform !== 'windows') throw new BadRequestException('Browser access is desktop-only');
     if (!input.enabled) {
       await this.redis.client.del(this.modeKey(host.id));
       await this.sessions.endForHost(host.id, 'mode_disabled');
@@ -37,7 +37,7 @@ export class ModeService {
     };
     await this.redis.client.set(this.modeKey(host.id), JSON.stringify(stored), 'EX', ttl);
     await this.sessions.endForHost(host.id, 'mode_reissued');
-    return { mode: publicMode(stored), code };
+    return { mode: publicMode(stored), ...(host.platform==='macos' || host.platform==='windows'?{code}:{}) };
   }
 
   async get(ownerAccountId: string, hostId: string): Promise<AccessMode | null> {

@@ -37,6 +37,8 @@ export interface SyncConfig {
   pinPepper?: string;
   ticketTtlSeconds: number;
   remoteSessionTtlSeconds: number;
+  webIdleTimeoutSeconds: number;
+  requireBoundedHosts: boolean;
   stunUrls: string[];
   turnUrls: string[];
   turnSecret?: string;
@@ -88,6 +90,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SyncConfig {
     pinPepper: optional(env.SYNC_PIN_PEPPER),
     ticketTtlSeconds: integer(env.SYNC_TICKET_TTL_SECONDS, 60, 10, 300),
     remoteSessionTtlSeconds: integer(env.SYNC_REMOTE_SESSION_TTL_SECONDS, 3_600, 60, 43_200),
+    webIdleTimeoutSeconds: integer(env.SYNC_WEB_IDLE_TIMEOUT_SECONDS, 900, 60, 86_400),
+    requireBoundedHosts: boolean(env.SYNC_REQUIRE_BOUNDED_HOSTS, env.NODE_ENV==='production'),
     stunUrls: csv(env.SYNC_STUN_URLS ?? 'stun:stun.l.google.com:19302'),
     turnUrls: csv(env.SYNC_TURN_URLS),
     turnSecret: optional(env.SYNC_TURN_SECRET),

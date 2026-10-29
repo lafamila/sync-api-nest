@@ -3,6 +3,19 @@ import { SyncConfigService } from '../src/config/config.service';
 import { loadConfig } from '../src/config/app-config';
 
 describe('SyncConfigService Nest DI bootstrap',()=>{
+  it.each([
+    {NODE_ENV:'production',expected:true},
+    {NODE_ENV:'development',expected:false},
+    {NODE_ENV:'test',expected:false},
+    {NODE_ENV:'production',SYNC_REQUIRE_BOUNDED_HOSTS:'false',expected:false},
+    {NODE_ENV:'test',SYNC_REQUIRE_BOUNDED_HOSTS:'true',expected:true},
+  ])('loads the bounded-host policy for $NODE_ENV with override $SYNC_REQUIRE_BOUNDED_HOSTS',(input)=>{
+    const {expected,...env}=input;
+    expect(loadConfig({DATABASE_URL:'postgresql://test',REDIS_URL:'redis://127.0.0.1:6379',...env}).requireBoundedHosts).toBe(expected);
+  });
+  it('rejects an ambiguous bounded-host policy override',()=>{
+    expect(()=>loadConfig({DATABASE_URL:'postgresql://test',REDIS_URL:'redis://127.0.0.1:6379',SYNC_REQUIRE_BOUNDED_HOSTS:'yes'})).toThrow('Expected true or false');
+  });
   it('loads process environment when no config-values provider is registered',async()=>{
     const previousDatabase=process.env.DATABASE_URL;
     const previousRedis=process.env.REDIS_URL;

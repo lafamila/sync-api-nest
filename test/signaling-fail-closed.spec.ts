@@ -1,6 +1,8 @@
 import { WebSocket } from 'ws';
 import { RevocationBusService } from '../src/common/revocation-bus.service';
 import { SignalingService } from '../src/signaling/signaling.service';
+import { SyncConfigService } from '../src/config/config.service';
+import { testConfig } from './helpers';
 
 interface FakeSocket {
   readyState:number;
@@ -87,7 +89,7 @@ interface InternalSignaling {
 function createService(sessions:object,redis:object,authSessions:object={revalidateById:jest.fn().mockResolvedValue(undefined)}):SignalingService {
   const sessionStub={endForInstance:jest.fn().mockResolvedValue([]),...sessions};
   return new SignalingService({} as never,{} as never,{} as never,sessionStub as never,{} as never,{} as never,redis as never,
-    authSessions as never,{namespace:'sync:test',instanceId:'00000000-0000-4000-8000-000000000001'} as never,new RevocationBusService());
+    authSessions as never,{namespace:'sync:test',instanceId:'00000000-0000-4000-8000-000000000001'} as never,new RevocationBusService(),new SyncConfigService(testConfig()));
 }
 function socket():FakeSocket { return {readyState:WebSocket.OPEN,send:jest.fn(),close:jest.fn(),terminate:jest.fn(),ping:jest.fn()}; }
 function connection(socketValue:FakeSocket,ticket:

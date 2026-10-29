@@ -42,7 +42,12 @@ export class DatabaseService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  async migrate(): Promise<void> { await this.pool.query(SCHEMA_SQL); }
+  async migrate(): Promise<void> {
+    await this.transaction(async (query) => {
+      await query('select pg_advisory_xact_lock(3053,2)');
+      await query(SCHEMA_SQL);
+    });
+  }
   async ping(): Promise<void> { await this.pool.query('select 1'); }
   async onApplicationShutdown(): Promise<void> { await this.pool.end(); }
 }

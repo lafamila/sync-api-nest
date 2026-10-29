@@ -2,9 +2,9 @@ import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nes
 import { AuthenticatedRequest } from '../common/request';
 import { RequestSecurityService } from '../common/request-security.service';
 import { SessionGuard } from '../auth/session.guard';
-import { ApproveGrantDto, ConnectDeviceDto, DeviceChallengeDto, DeviceProofDto, RegisterDeviceDto, SetModeDto } from './device.dto';
+import { ApproveGrantDto, CapabilityUpdateDto, ConnectDeviceDto, DeviceChallengeDto, DeviceProofDto, RegisterDeviceDto, SetModeDto } from './device.dto';
 import { DeviceProofService } from './device-proof.service';
-import { DeviceService } from './device.service';
+import { DeviceService, presentDevice } from './device.service';
 
 @Controller('devices')
 @UseGuards(SessionGuard)
@@ -24,6 +24,11 @@ export class DeviceController {
   }
   @Get()
   list(@Req() req: AuthenticatedRequest) { return this.service.list(req.syncSession); }
+  @Post(':id/capabilities')
+  capabilities(@Req() req: AuthenticatedRequest,@Param('id') id: string,@Body() input: CapabilityUpdateDto) {
+    this.security.assertMutation(req,req.syncSession); this.security.assertNativeSession(req.syncSession);
+    return this.service.updateCapabilities(req.syncSession,id,input);
+  }
   @Delete(':id')
   remove(@Req() req: AuthenticatedRequest,@Param('id') id:string,@Body() proof:DeviceProofDto) {
     this.security.assertMutation(req,req.syncSession); this.security.assertNativeSession(req.syncSession);
@@ -53,5 +58,5 @@ export class DeviceController {
 }
 
 function publicDevice(device: import('./device.repository').Device) {
-  return { id:device.id,name:device.name,platform:device.platform,online:false,mode:null };
+  return { ...presentDevice(device),online:false,mode:null };
 }

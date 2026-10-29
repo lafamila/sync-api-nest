@@ -5,7 +5,10 @@ import type {
   DataMessage,
   IceServer,
   RemoteSession,
+  DisplayState,
 } from "./types";
+import { SYNC_LIMITS, validateWire } from "./generated/sync-wire";
+import type { WireSignal } from "./generated/sync-wire";
 
 interface RemoteConnectionEvents {
   onMetrics: (metrics: ConnectionMetrics) => void;
@@ -13,14 +16,21 @@ interface RemoteConnectionEvents {
   onRecoveryNeeded: (reason: string) => void;
   onStream: (stream: MediaStream) => void;
   onSessionEnded: (reason: string) => void;
+  onDisplays: (state: DisplayState) => void;
+  onActivity: () => void;
+  hasAuthority: () => boolean;
 }
 
 interface SignalingMessage {
-  type: "ready" | "answer" | "ice" | "session-ended" | "pong";
+  type: string;
   sessionId?: string;
   sdp?: string;
   candidate?: RTCIceCandidateInit;
   reason?: string;
+  displays?: WireSignal["displays"];
+  selectedDisplayId?: string;
+  inputEpoch?: string;
+  requestId?: string;
 }
 
 const EMPTY_METRICS: ConnectionMetrics = {
@@ -51,6 +61,10 @@ export class RemoteConnection {
   private seq = 0;
   private heartbeatTimer: number | null = null;
   private metricsTimer: number | null = null;
+  private signalingPingTimer: number | null = null;
+  private signalingDeadlineTimer: number | null = null;
+  private lastPongAt = performance.now();
+  private lastPongWallAt = Date.now();
   private previousBytes: { at: number; bytes: number } | null = null;
   private metrics: ConnectionMetrics = { ...EMPTY_METRICS };
   private disposed = false;
@@ -58,14 +72,24 @@ export class RemoteConnection {
   private authorizationValid = false;
   private recoveryRequested = false;
   private lastHeartbeatSentAt: number | null = null;
+  private lastHeartbeatWallAt: number | null = null;
   private heartbeatSuspendedAt: number | null = null;
+  private heartbeatSuspendedWallAt: number | null = null;
   private readonly pendingIce: RTCIceCandidateInit[] = [];
+  private inputEpoch: string;
+  private inputArmed = false;
+  private initialDisplaysReceived = false;
+  private displayTimer: number | null = null;
+  private displayState: DisplayState = { displays: [], selectedDisplayId: null, busy: false, error: null };
+  private pendingDisplay: { requestId: string; displayId: string; previousEpoch: string; querying: boolean } | null = null;
+  private readonly completedDisplayRequests = new Set<string>();
 
   constructor(
     readonly session: RemoteSession,
     iceServers: IceServer[],
     private readonly events: RemoteConnectionEvents,
   ) {
+    this.inputEpoch = session.epoch;
     this.peer = new RTCPeerConnection({ iceServers });
     this.peer.addTransceiver("video", { direction: "recvonly" });
     this.control = this.peer.createDataChannel("sync-control", { ordered: true });
@@ -78,6 +102,7 @@ export class RemoteConnection {
   }
 
   async start(ticket: string): Promise<void> {
+    if (!this.enforceLifetime()) return;
     this.events.onPhase("signaling");
     try {
       this.socket = new WebSocket(signalingUrl(ticket));
@@ -86,43 +111,58 @@ export class RemoteConnection {
       return;
     }
     this.socket.addEventListener("message", (event) => void this.handleSignal(event));
+    this.socket.addEventListener("open", () => this.signal({ type: "ping" }));
     this.socket.addEventListener("error", () => this.requestRecovery("Signaling connection failed"));
     this.socket.addEventListener("close", () => {
       if (this.disposed) return;
       this.requestRecovery("The authorized signaling connection closed");
     });
+    this.signalingPingTimer = window.setInterval(() => this.signal({ type: "ping" }), SYNC_LIMITS.signalingPingIntervalSeconds * 1000);
+    this.scheduleSignalingDeadline();
   }
 
   requestRecovery(reason: string): void {
     if (this.disposed || this.recoveryRequested) return;
     this.recoveryRequested = true;
-    this.releaseAll();
     this.authorizationValid = false;
+    this.inputArmed = false;
+    this.dispose();
     this.events.onRecoveryNeeded(reason);
   }
 
-  inputHeartbeatExpired(now = Date.now()): boolean {
+  checkAuthorization(): boolean { return this.enforceLifetime(); }
+
+  inputHeartbeatExpired(now = performance.now(), wallNow = Date.now()): boolean {
     return this.session.scope === "control"
-      && ((this.heartbeatSuspendedAt !== null && now - this.heartbeatSuspendedAt > 1_500)
-        || (this.lastHeartbeatSentAt !== null && now - this.lastHeartbeatSentAt > 1_500));
+      && ((this.heartbeatSuspendedAt !== null && Math.max(now - this.heartbeatSuspendedAt, wallNow - this.heartbeatSuspendedWallAt!) > 1_500)
+        || (this.lastHeartbeatSentAt !== null && Math.max(now - this.lastHeartbeatSentAt, wallNow - this.lastHeartbeatWallAt!) > 1_500));
   }
 
   suspendInputHeartbeat(): void {
     if (this.session.scope !== "control" || this.heartbeatSuspendedAt !== null) return;
     this.releaseAll();
-    this.heartbeatSuspendedAt = Date.now();
+    this.heartbeatSuspendedAt = performance.now();
+    this.heartbeatSuspendedWallAt = Date.now();
   }
 
   resumeInputHeartbeat(): void {
     if (this.heartbeatSuspendedAt === null) return;
     this.heartbeatSuspendedAt = null;
+    this.heartbeatSuspendedWallAt = null;
     this.sendReliable({ type: "heartbeat" });
   }
 
   canControl(): boolean {
     return (
       !this.disposed &&
+      !this.recoveryRequested &&
+      document.visibilityState === "visible" &&
+      this.events.hasAuthority() &&
+      !this.signalingExpired() &&
+      this.heartbeatSuspendedAt === null &&
       this.authorizationValid &&
+      this.inputArmed &&
+      !this.displayState.busy &&
       this.session.scope === "control" &&
       this.peer.connectionState === "connected" &&
       this.control.readyState === "open" &&
@@ -140,7 +180,39 @@ export class RemoteConnection {
 
   releaseAll(): void {
     if (this.session.scope !== "control" || this.control.readyState !== "open") return;
-    this.control.send(this.encode({ type: "release-all" }));
+    try { this.control.send(this.encode({ type: "release-all" })); } catch { /* Closing transport must not interrupt local cleanup. */ }
+  }
+
+  get supportsDisplays(): boolean {
+    return (this.session.protocolVersion ?? 1) >= 2
+      && this.session.capabilities?.includes("host-displays") === true
+      && this.session.capabilities?.includes("viewer-displays") === true;
+  }
+
+  userActivity(): void {
+    if (this.enforceLifetime() && this.authorizationValid && this.peer.connectionState === "connected") this.events.onActivity();
+  }
+
+  selectDisplay(displayId: string): boolean {
+    if (!this.enforceLifetime() || !this.supportsDisplays || !this.authorizationValid || this.displayState.busy
+      || !this.displayState.displays.some(display => display.id === displayId) || displayId === this.displayState.selectedDisplayId) return false;
+    this.releaseAll();
+    this.inputArmed = false;
+    const pending = { requestId: crypto.randomUUID(), displayId, previousEpoch: this.inputEpoch, querying: false };
+    this.pendingDisplay = pending;
+    this.displayState = { ...this.displayState, busy: true, error: null };
+    this.publishDisplays();
+    if (!this.signal({ type: "select-display", sessionId: this.session.id, displayId, inputEpoch: this.inputEpoch, requestId: pending.requestId })) {
+      this.endDisplayFailure("Display signaling closed");
+      return false;
+    }
+    this.displayTimer = window.setTimeout(() => {
+      if (this.disposed || this.pendingDisplay !== pending) return;
+      pending.querying = true;
+      this.signal({ type: "get-displays", sessionId: this.session.id });
+      this.displayTimer = window.setTimeout(() => this.endDisplayFailure("Display selection timed out"), SYNC_LIMITS.displayRecoveryTimeoutSeconds * 1000);
+    }, SYNC_LIMITS.displaySelectionTimeoutSeconds * 1000);
+    return true;
   }
 
   dispose(): void {
@@ -149,6 +221,11 @@ export class RemoteConnection {
     this.disposed = true;
     if (this.heartbeatTimer !== null) window.clearInterval(this.heartbeatTimer);
     if (this.metricsTimer !== null) window.clearInterval(this.metricsTimer);
+    if (this.signalingPingTimer !== null) window.clearInterval(this.signalingPingTimer);
+    if (this.signalingDeadlineTimer !== null) window.clearTimeout(this.signalingDeadlineTimer);
+    if (this.displayTimer !== null) window.clearTimeout(this.displayTimer);
+    this.pendingDisplay = null;
+    this.inputArmed = false;
     this.control.close();
     this.motion.close();
     this.peer.close();
@@ -166,15 +243,18 @@ export class RemoteConnection {
       });
     });
     this.peer.addEventListener("track", (event) => {
+      if (!this.enforceLifetime()) return;
       const stream = event.streams[0] ?? new MediaStream([event.track]);
       event.track.addEventListener("ended", () => this.requestRecovery("The remote video track ended"));
       this.events.onStream(stream);
     });
     this.peer.addEventListener("connectionstatechange", () => {
+      if (!this.enforceLifetime()) return;
       const state = this.peer.connectionState;
       if (state === "connected") {
         this.events.onPhase("connected");
         this.startMetrics();
+        this.armInput();
       } else if (state === "connecting" || state === "new") {
         this.events.onPhase("connecting");
       } else if (state === "disconnected") {
@@ -194,7 +274,9 @@ export class RemoteConnection {
         if (this.heartbeatSuspendedAt === null) this.sendReliable({ type: "heartbeat" });
       }, 500);
       this.sendReliable({ type: "heartbeat" });
+      this.armInput();
     });
+    this.motion.addEventListener("open", () => this.armInput());
     this.control.addEventListener("message", () => this.recordDataMessage());
     this.motion.addEventListener("message", () => this.recordDataMessage());
     this.control.addEventListener("close", () => this.requestRecovery("The control channel closed"));
@@ -204,17 +286,37 @@ export class RemoteConnection {
   }
 
   private async handleSignal(event: MessageEvent): Promise<void> {
+    if (!this.enforceLifetime()) return;
     let message: SignalingMessage;
     try {
-      message = JSON.parse(String(event.data)) as SignalingMessage;
+      if (typeof event.data !== "string" || new TextEncoder().encode(event.data).byteLength > SYNC_LIMITS.maxSignalBytes) throw new Error("Oversized signal");
+      message = JSON.parse(event.data) as SignalingMessage;
+      if (!message || typeof message !== "object" || !["ready", "answer", "ice", "session-ended", "pong", "displays", "display-error"].includes(message.type)) throw new Error("Unknown signal");
     } catch {
       this.requestRecovery("The signaling server sent an invalid message");
+      return;
+    }
+
+    if (message.type === "pong") {
+      if (!validateWire("WireSignal", message) || Object.keys(message).some(key => key !== "type")) {
+        this.requestRecovery("The signaling server sent an invalid pong");
+        return;
+      }
+      this.lastPongAt = performance.now();
+      this.lastPongWallAt = Date.now();
+      this.scheduleSignalingDeadline();
       return;
     }
 
     if (message.type === "ready" && !this.offerSent) {
       this.authorizationValid = true;
       this.offerSent = true;
+      if (this.supportsDisplays) {
+        this.displayState = { ...this.displayState, busy: true };
+        this.publishDisplays();
+        this.signal({ type: "get-displays", sessionId: this.session.id });
+        this.displayTimer = window.setTimeout(() => this.endDisplayFailure("Display metadata timed out"), SYNC_LIMITS.displaySelectionTimeoutSeconds * 1000);
+      }
       try {
         const offer = await this.peer.createOffer();
         await this.peer.setLocalDescription(offer);
@@ -227,6 +329,10 @@ export class RemoteConnection {
     }
 
     if (message.sessionId && message.sessionId !== this.session.id) return;
+    if (message.type === "displays" || message.type === "display-error") {
+      this.handleDisplaySignal(message);
+      return;
+    }
 
     try {
       if (message.type === "answer" && message.sdp) {
@@ -236,7 +342,8 @@ export class RemoteConnection {
         }
       } else if (message.type === "ice" && message.candidate) {
         if (this.peer.remoteDescription) await this.peer.addIceCandidate(message.candidate);
-        else this.pendingIce.push(message.candidate);
+        else if (this.pendingIce.length < 256) this.pendingIce.push(message.candidate);
+        else throw new Error("Too many pending ICE candidates");
       } else if (message.type === "session-ended") {
         this.releaseAll();
         this.authorizationValid = false;
@@ -249,9 +356,11 @@ export class RemoteConnection {
   }
 
   private send(channel: RTCDataChannel, payload: ControlPayload): boolean {
-    if (!this.canControl() || channel.readyState !== "open") return false;
-    channel.send(this.encode(payload));
-    if (payload.type === "heartbeat") this.lastHeartbeatSentAt = Date.now();
+    if (!this.enforceLifetime() || !this.canControl() || channel.readyState !== "open") return false;
+    try { channel.send(this.encode(payload)); }
+    catch { this.requestRecovery("The input channel closed"); return false; }
+    if (payload.type === "heartbeat") { this.lastHeartbeatSentAt = performance.now(); this.lastHeartbeatWallAt = Date.now(); }
+    if (payload.type !== "heartbeat" && payload.type !== "release-all") this.userActivity();
     return true;
   }
 
@@ -260,16 +369,125 @@ export class RemoteConnection {
       ...payload,
       seq: ++this.seq,
       epoch: this.session.epoch,
+      ...((this.session.protocolVersion ?? 1) >= 2 ? { inputEpoch: this.inputEpoch } : {}),
     };
     return JSON.stringify(message);
   }
 
-  private signal(message: object): void {
-    if (this.socket?.readyState !== WebSocket.OPEN) return;
-    this.socket.send(JSON.stringify(message));
+  private signal(message: object): boolean {
+    if (!this.enforceLifetime() || this.socket?.readyState !== WebSocket.OPEN) return false;
+    try { this.socket.send(JSON.stringify(message)); }
+    catch { this.requestRecovery("The authorized signaling connection closed"); return false; }
+    return true;
+  }
+
+  private signalingExpired(): boolean {
+    return this.signalingAge() >= SYNC_LIMITS.signalingLivenessTimeoutSeconds * 1000;
+  }
+
+  private signalingAge(): number {
+    // Monotonic time defeats rollback; forward wall time also detects platforms that pause it during sleep.
+    return Math.max(performance.now() - this.lastPongAt, Date.now() - this.lastPongWallAt);
+  }
+
+  private enforceLifetime(): boolean {
+    if (this.disposed || this.recoveryRequested) return false;
+    if (!this.events.hasAuthority()) {
+      this.authorizationValid = false;
+      this.inputArmed = false;
+      this.dispose();
+      this.events.onSessionEnded("Remote access expired. Enter a new access code.");
+      return false;
+    }
+    if (document.visibilityState !== "visible") {
+      this.requestRecovery("The page was hidden");
+      return false;
+    }
+    if (this.signalingExpired()) {
+      this.requestRecovery("The authorized signaling connection stopped responding");
+      return false;
+    }
+    return true;
+  }
+
+  private scheduleSignalingDeadline(): void {
+    if (this.signalingDeadlineTimer !== null) window.clearTimeout(this.signalingDeadlineTimer);
+    const remaining = SYNC_LIMITS.signalingLivenessTimeoutSeconds * 1000 - this.signalingAge();
+    this.signalingDeadlineTimer = window.setTimeout(() => {
+      if (this.enforceLifetime()) this.scheduleSignalingDeadline();
+    }, Math.max(1, remaining));
+  }
+
+  private publishDisplays(): void { this.events.onDisplays({ ...this.displayState, displays: [...this.displayState.displays] }); }
+
+  private armInput(): void {
+    if (!this.enforceLifetime() || !this.authorizationValid || this.pendingDisplay || this.displayState.busy
+      || (this.supportsDisplays && !this.initialDisplaysReceived)
+      || this.peer.connectionState !== "connected" || this.control.readyState !== "open" || this.motion.readyState !== "open") return;
+    if (this.session.scope === "control") {
+      try { this.control.send(this.encode({ type: "heartbeat" })); }
+      catch { this.requestRecovery("The input channel closed"); return; }
+      this.lastHeartbeatSentAt = performance.now();
+      this.lastHeartbeatWallAt = Date.now();
+    }
+    this.inputArmed = true;
+    this.publishDisplays();
+  }
+
+  private handleDisplaySignal(message: SignalingMessage): void {
+    if (!this.supportsDisplays || message.sessionId !== this.session.id || !validateWire("WireSignal", message)) {
+      this.endDisplayFailure("Invalid display metadata");
+      return;
+    }
+    if (message.requestId && this.completedDisplayRequests.has(message.requestId)) return;
+    const pending = this.pendingDisplay;
+    if (message.type === "display-error") {
+      if (pending && message.requestId && message.requestId !== pending.requestId) return;
+      this.endDisplayFailure(`Display ${message.reason ?? "unavailable"}`);
+      return;
+    }
+    if (!message.displays || !message.inputEpoch || !message.selectedDisplayId) return;
+    const ids = new Set(message.displays.map(display => display.id));
+    if (ids.size !== message.displays.length || !ids.has(message.selectedDisplayId)) {
+      this.endDisplayFailure("The selected display is unavailable");
+      return;
+    }
+    if (pending) {
+      if (message.requestId !== pending.requestId && !(pending.querying && !message.requestId)) return;
+      if (message.selectedDisplayId !== pending.displayId || message.inputEpoch === pending.previousEpoch) {
+        this.endDisplayFailure("Display selection could not be confirmed");
+        return;
+      }
+      this.completedDisplayRequests.add(pending.requestId);
+      if (this.completedDisplayRequests.size > 32) this.completedDisplayRequests.delete(this.completedDisplayRequests.values().next().value!);
+    } else if (message.requestId) return;
+    else if (this.initialDisplaysReceived && (message.inputEpoch !== this.inputEpoch || message.selectedDisplayId !== this.displayState.selectedDisplayId)) {
+      this.endDisplayFailure("The remote display changed");
+      return;
+    } else if (!this.initialDisplaysReceived && message.inputEpoch !== this.session.epoch) {
+      this.endDisplayFailure("Invalid initial display epoch");
+      return;
+    }
+    if (this.displayTimer !== null) window.clearTimeout(this.displayTimer);
+    this.displayTimer = null;
+    this.pendingDisplay = null;
+    this.initialDisplaysReceived = true;
+    this.inputEpoch = message.inputEpoch;
+    this.displayState = { displays: message.displays, selectedDisplayId: message.selectedDisplayId, busy: false, error: null };
+    this.publishDisplays();
+    this.armInput();
+  }
+
+  private endDisplayFailure(reason: string): void {
+    if (this.disposed) return;
+    this.inputArmed = false;
+    this.authorizationValid = false;
+    this.events.onSessionEnded(reason);
+    this.dispose();
   }
 
   private recordDataMessage(): void {
+    if (!this.enforceLifetime()) return;
     this.metrics = {
       ...this.metrics,
       dataMessagesReceived: this.metrics.dataMessagesReceived + 1,
@@ -284,8 +502,10 @@ export class RemoteConnection {
   }
 
   private async collectMetrics(): Promise<void> {
-    if (this.disposed) return;
-    const reports = await this.peer.getStats();
+    if (!this.enforceLifetime()) return;
+    let reports: RTCStatsReport;
+    try { reports = await this.peer.getStats(); } catch { return; }
+    if (!this.enforceLifetime()) return;
     let bitrateKbps: number | null = null;
     let framesPerSecond: number | null = null;
     let resolution: string | null = null;

@@ -6,6 +6,7 @@ import { SyncConfigService } from '../config/config.service';
 import { RedisService } from '../redis/redis.service';
 import { DeviceProofDto, RegisterDeviceDto } from './device.dto';
 import { Device, DeviceRepository } from './device.repository';
+import { deviceProof, registrationProof } from '../generated/sync-wire';
 
 interface Challenge { id: string; nonce: string; accountId: string; deviceId?: string; expiresAt: string }
 
@@ -31,10 +32,11 @@ export class DeviceProofService {
   async register(account: Account, input: RegisterDeviceDto): Promise<Device> {
     const challenge = await this.consumeChallenge(account.id, input.challengeId, undefined);
     const publicKeyDer = decodePublicKey(input.publicKey);
-    if (!verifySignature(publicKeyDer, `sync:register:${challenge.id}:${challenge.nonce}`, input.signature)) {
+    if (!verifySignature(publicKeyDer, registrationProof(challenge.id,challenge.nonce), input.signature)) {
       throw new ForbiddenException('Device registration signature is invalid');
     }
-    return this.devices.create(account.id, { name: input.name, platform: input.platform, publicKeyDer });
+    return this.devices.create(account.id, { name: input.name, platform: input.platform, publicKeyDer,
+      protocolVersion: input.protocolVersion, clientVersion: input.clientVersion, capabilities: input.capabilities });
   }
 
   async verify(account: Account, proof: DeviceProofDto, expectedDeviceId?: string): Promise<Device> {
@@ -42,7 +44,7 @@ export class DeviceProofService {
     const device = await this.devices.findOwned(account.id, proof.deviceId);
     if (!device) throw new NotFoundException('Device not found');
     const challenge = await this.consumeChallenge(account.id, proof.challengeId, device.id);
-    if (!verifySignature(device.publicKeyDer, `sync:device:${device.id}:${challenge.id}:${challenge.nonce}`, proof.signature)) {
+    if (!verifySignature(device.publicKeyDer, deviceProof(device.id,challenge.id,challenge.nonce), proof.signature)) {
       throw new ForbiddenException('Device proof signature is invalid');
     }
     return device;
