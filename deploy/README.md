@@ -47,6 +47,15 @@ docker compose -p sync-turn-dev --env-file .env -f deploy/turn.compose.yml -f de
 
 ### 개인 키 읽기 권한
 
+DSM에서 내보낸 `cert.pem`의 마지막 줄에 개행이 없을 수 있다. `cat cert.pem chain.pem`만 사용하면 `END CERTIFICATE`와 다음 `BEGIN CERTIFICATE`가 한 줄에 붙어 OpenSSL의 `PEM bad end line` 오류가 난다. 전용 복사본 폴더에서 줄 끝 개행을 보장해 묶는다. DSM 원본 파일과 개인 키 내용은 변경하지 않는다.
+
+```sh
+cd /volume1/www/_System/sync-api-nest/deploy/.state/certs
+awk '1' cert.pem chain.pem > fullchain.pem
+```
+
+인증서가 이미 운영 중이면 덮어쓰기 전에 현재 전용 fullchain을 백업한다. 교체 뒤 인증서와 키의 공개키 일치·파일 소유권·실제 TLS handshake를 확인한다. `prepare-turn.mjs`의 파일 존재 검사만으로 PEM 형식/키 일치가 검증된 것은 아니다.
+
 현재 TURN 컨테이너는 UID/GID `0:0`과 `cap_drop: ALL`로 실행한다. 권한 우회 capability가 없으므로, SFTP 사용자(예: UID1026)가 소유한 mode600 개인 키를 컨테이너의 root가 읽지 못할 수 있다. `Certificate file found`와 함께 `Private key file not found or not readable`, `TLS ... listeners are disabled`가 나오면 인증서 검증보다 먼저 mount/파일 소유권을 확인한다.
 
 DSM 원본이 아닌 **TURN 전용 복사본**을 root 소유 mode600으로 배치한다. 다음은 문서에서 사용한 전용 폴더이며 실제 mount source와 일치해야 한다. 다른 위치의 DSM 관리 파일을 재귀적으로 chown하지 않는다.
