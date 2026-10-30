@@ -40,6 +40,12 @@ docker run --rm node:22-alpine npm ping --fetch-retries=0 --fetch-timeout=20000
 
 선택한 공개 Sync 도메인의 HTTPS를 `127.0.0.1:3053`으로 연결한다. `/api/signaling`에 WebSocket `Upgrade`/`Connection` 헤더 전달과 충분한 연결 timeout이 필요하다. `SYNC_ALLOWED_ORIGINS`에는 실제 웹 origin만 등록하고 wildcard를 쓰지 않는다.
 
+DSM7에서는 **제어판 → 로그인 포털 → 고급 → 역방향 프록시**에서 `sync.lafamila.xyz` 규칙을 편집한다. 대상은 HTTP `127.0.0.1:3053`으로 유지하고 **사용자 지정 헤더 → 생성 드롭다운 → WebSocket**으로 표준 Upgrade/Connection 헤더를 추가한다. 고급 설정의 대상 Proxy HTTP 버전은 HTTP/1.1을 사용한다. 소스 HTTPS/인증서를 TURN 포트로 변경하지 않는다.
+
+REST 로그인·기기 등록·신뢰 승인 성공은 WebSocket 성공을 뜻하지 않는다. 기기의 원격 mode는 활성인데 presence가 없고, NAS 내부 `/api/signaling`은 HTTP101인데 공개 WSS는404라면 reverse proxy의 업그레이드 전달을 확인한다. 무효한 진단 티켓으로101 뒤1008 `ticket invalid`를 받는 것은 업그레이드 경로만 통과한 것이며, 실제 인증/기기 온라인 성공은 별도로 확인한다. 로그에 실제 티켓을 출력하지 않는다.
+
+설정 저장 후 필요하면 Mac의 Turn Off/Turn On으로 새 host 연결을 만들고 iPhone 목록을 새로고침한다. 이미 열어둔 Connect 시트는 닫고 다시 연다. mode 활성 표시는 실제 online/presence 상태와 구분하며, 프록시 문제를 기기 재등록·신뢰 재설정·DB 초기화로 우회하지 않는다.
+
 iPhone 초기 로그인에서 사용하는 auth 주소와 callback도 iPhone에서 접근 가능해야 한다. localhost3032 기반 개발 auth는 iPhone이나 다른 컴퓨터에서 그 Mac을 가리키지 않는다. 외부 사용은 공개 HTTPS auth와 승인된 해당 환경 client/callback, 실제 API URL을 앱 설정에 반영한 뒤 검증한다.
 
 ## TURN
