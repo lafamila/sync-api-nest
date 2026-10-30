@@ -45,4 +45,21 @@ docker compose -p sync-turn-dev --env-file .env -f deploy/turn.compose.yml -f de
 
 기본 compose만 실행하면 TLS 인증서를 mount하지 않는다. TLS 모드는 반드시 override 파일까지 포함하고 준비 단계에서 인증서 파일 검증을 통과해야 한다.
 
+### 개인 키 읽기 권한
+
+현재 TURN 컨테이너는 UID/GID `0:0`과 `cap_drop: ALL`로 실행한다. 권한 우회 capability가 없으므로, SFTP 사용자(예: UID1026)가 소유한 mode600 개인 키를 컨테이너의 root가 읽지 못할 수 있다. `Certificate file found`와 함께 `Private key file not found or not readable`, `TLS ... listeners are disabled`가 나오면 인증서 검증보다 먼저 mount/파일 소유권을 확인한다.
+
+DSM 원본이 아닌 **TURN 전용 복사본**을 root 소유 mode600으로 배치한다. 다음은 문서에서 사용한 전용 폴더이며 실제 mount source와 일치해야 한다. 다른 위치의 DSM 관리 파일을 재귀적으로 chown하지 않는다.
+
+```sh
+chown 0:0 /volume1/www/_System/sync-api-nest/deploy/.state/certs/fullchain.pem /volume1/www/_System/sync-api-nest/deploy/.state/certs/privkey.pem
+chmod 600 /volume1/www/_System/sync-api-nest/deploy/.state/certs/fullchain.pem /volume1/www/_System/sync-api-nest/deploy/.state/certs/privkey.pem
+```
+
+`chmod 644/777`이나 `cap_drop` 제거로 개인 키를 공개하지 않는다. 인증서 갱신/재복사 때도 같은 소유권을 유지한다. 생성 옵션을 바꿨다면 `prepare-turn.mjs`를 다시 실행하고, 같은 base+TLS Compose 명령의 `up -d --force-recreate`로 TURN만 재생성한다.
+
+고정 coturn4.18 이미지는 CLI/DTLS를 기본 비활성화하고 TLS 최소1.2를 사용한다. 생성기는 `cli=0`, `dtls=0`으로 비활성화를 명시하고, 제거된 `no-cli`/`no-dtls`와 지원되지 않는 `no-tlsv1`/`no-tlsv1_1`을 출력하지 않는다. 단순히 코드만 pull하면 이미 생성된 `deploy/.state/turnserver.conf`는 바뀌지 않는다.
+
+`openssl s_client`의 `CONNECTED`는 TCP 접속만 뜻한다. `no peer certificate available`, 읽은 handshake0바이트, cipher없음 또는 nonzero exit는 TLS 성공이 아니며, 이때 `Verify return code: 0`만으로 검증 성공으로 판단하지 않는다. NAS localhost5349와 실제 외부5349를 구분해 검사한다.
+
 앱/WebRTC 설정을 relay-only로 바꾼 실제 테스트와 셀룰러 연결 증거가 있어야 외부 중계 검증 완료로 표시한다. API 로그인과 기기 허가를 생략해 테스트하지 않는다.

@@ -31,8 +31,8 @@ try {
   const lines = [
     `listening-port=${listenPort}`, `external-ip=${address}`, `realm=${realm}`,
     'fingerprint', 'use-auth-secret', `static-auth-secret=${secret}`,
-    `min-port=${minPort}`, `max-port=${maxPort}`, 'no-cli', 'no-multicast-peers',
-    'no-tcp-relay', 'no-dtls', 'log-file=stdout', 'simple-log',
+    `min-port=${minPort}`, `max-port=${maxPort}`, 'cli=0', 'no-multicast-peers',
+    'no-tcp-relay', 'dtls=0', 'log-file=stdout', 'simple-log',
     'pidfile=/tmp/turnserver.pid', 'total-quota=20', 'user-quota=4',
   ];
   if (env.SYNC_TURN_ENABLE_TLS === 'true') {
@@ -40,7 +40,7 @@ try {
       const filename = env[key];
       if (!filename || !(await stat(resolve(root, filename))).isFile()) throw new Error(`${key}: certificate/key file required`);
     }
-    lines.push(`tls-listening-port=${tlsPort}`, 'cert=/certs/fullchain.pem', 'pkey=/certs/privkey.pem', 'no-tlsv1', 'no-tlsv1_1');
+    lines.push(`tls-listening-port=${tlsPort}`, 'cert=/certs/fullchain.pem', 'pkey=/certs/privkey.pem');
   } else {
     if (env.SYNC_TURN_ENABLE_TLS && env.SYNC_TURN_ENABLE_TLS !== 'false') throw new Error('SYNC_TURN_ENABLE_TLS: true/false required');
     lines.push('no-tls');

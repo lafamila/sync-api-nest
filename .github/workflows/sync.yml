@@ -35,6 +35,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: npm run test:turn-config
       - run: npm run test:integration
       - run: npm run build
 

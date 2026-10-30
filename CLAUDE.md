@@ -22,3 +22,7 @@ Native 완료는 initiating app verifier와 callback에만 전달되는 60초 �
 LAN 개발 테스트의 브라우저 인증 주소는 선택적 `SYNC_OIDC_AUTHORIZATION_URL`로 분리한다. 토큰 교환·JWT issuer/JWKS 검증은 기존 `SYNC_AUTH_*`를 유지한다. `scripts/dev-auth-lan.mjs`는 지정된 사설 IPv4에서 기존 loopback auth의 공개 OAuth/OIDC 경로만 전달하며 admin/service 경로를 노출하지 않는다. Origin은 정확한 주소만 추가하고 CSRF 검사를 유지한다. LAN callback도 사용자 onboarding 변경 승인이 필요하고 승인 시 새 secret을 서버 `.env`에 반영한다. 운영에는 이 개발용 HTTP 프록시를 사용하지 않는다.
 
 TURN의 base/TLS Compose는 Synology `docker-compose` v1 호환을 위해 양쪽 모두 file format3.3을 유지한다. 최상위 `name:`을 추가하지 않고 v1/v2 명령에 `-p sync-turn-dev`를 지정한다. 변경 시 가짜 env만 사용하는 base·TLS `config --quiet`를 구버전/최신 파서로 검증하며, 다른 서비스·실제 TURN·DB를 시작/재시작하지 않는다.
+
+Docker의 backend/web/runtime `npm ci`는 유한한 fetch 재시도로 일시적 네트워크 오류를 보완하며 lockfile·TLS·실패 전파는 유지한다. NAS의 지속적인 `ETIMEDOUT`은 해당 Docker 네트워크의 registry 연결을 별도 확인하며, registry/TLS 우회나 기존 서비스 종료로 해결하지 않는다. Workspace 배포 스크립트의 변경은 API checkout과 별도로 NAS에 반영한다.
+
+고정 coturn4.18 설정은 `cli=0`·`dtls=0`과 기본 TLS최소1.2를 유지하고 제거된 구형 옵션을 생성하지 않는다. TURN은 UID/GID0:0 + cap_dropALL이므로 전용 인증서/키 복사본의 root 소유·mode600을 유지한다. TLS 실패에서 파일 존재와 실제 프로세스의 읽기 가능 여부를 구분하며, chmod644/777·capability 추가·인증서 검증 해제로 우회하지 않는다. 생성기 수정 후 기존 conf 재생성과 TURN 재생성이 별도로 필요하다.
