@@ -20,3 +20,5 @@ API typecheck/unit/integration/security tests, web build/e2e, env 비밀 검증 
 Native 완료는 initiating app verifier와 callback에만 전달되는 60초 일회용 handoffCode를 모두 요구한다. 웹/앱 세션 전송 방식은 DB의 발급 platform으로 검증하며 caller header만으로 바꾸지 않는다. 운영 배포/공개 auth 등록은 사용자가 직접 수행한다.
 
 LAN 개발 테스트의 브라우저 인증 주소는 선택적 `SYNC_OIDC_AUTHORIZATION_URL`로 분리한다. 토큰 교환·JWT issuer/JWKS 검증은 기존 `SYNC_AUTH_*`를 유지한다. `scripts/dev-auth-lan.mjs`는 지정된 사설 IPv4에서 기존 loopback auth의 공개 OAuth/OIDC 경로만 전달하며 admin/service 경로를 노출하지 않는다. Origin은 정확한 주소만 추가하고 CSRF 검사를 유지한다. LAN callback도 사용자 onboarding 변경 승인이 필요하고 승인 시 새 secret을 서버 `.env`에 반영한다. 운영에는 이 개발용 HTTP 프록시를 사용하지 않는다.
+
+TURN의 base/TLS Compose는 Synology `docker-compose` v1 호환을 위해 양쪽 모두 file format3.3을 유지한다. 최상위 `name:`을 추가하지 않고 v1/v2 명령에 `-p sync-turn-dev`를 지정한다. 변경 시 가짜 env만 사용하는 base·TLS `config --quiet`를 구버전/최신 파서로 검증하며, 다른 서비스·실제 TURN·DB를 시작/재시작하지 않는다.

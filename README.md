@@ -33,7 +33,7 @@ Use one stable LAN address for the controller browser, callback, and TURN. HTTP 
 - Approve the exact callback through an auth onboarding update. `docs/onboarding/sync-service-onboarding-lan-update.json` contains the current development address; edit it when the address changes. Approval rotates the confidential client secret: update `SYNC_OIDC_CLIENT_SECRET` with the newly issued value.
 - Keep `SYNC_AUTH_ISSUER_URL` and `SYNC_AUTH_JWKS_URL` on the existing loopback auth. Set `SYNC_OIDC_AUTHORIZATION_URL=http://<LAN_IP>:3032/oauth/authorize` for the browser-facing endpoint only. Token exchange and issuer validation do not move to the LAN alias.
 - Run `node --env-file=.env scripts/dev-auth-lan.mjs`. It binds only the configured private LAN address and proxies public OAuth/OIDC paths to the existing loopback auth. `/admin`, `/service`, and admin APIs remain unavailable on this listener. Manage auth through `http://localhost:3032`.
-- Set `SYNC_TURN_URLS`, `SYNC_TURN_EXTERNAL_IP`, and `SYNC_TURN_BIND_ADDRESS` to the LAN address, then run `node deploy/prepare-turn.mjs` and `docker compose --env-file .env -f deploy/turn.compose.yml up -d --no-build --pull never` for the Sync-owned coturn instance.
+- Set `SYNC_TURN_URLS`, `SYNC_TURN_EXTERNAL_IP`, and `SYNC_TURN_BIND_ADDRESS` to the LAN address, then run `node deploy/prepare-turn.mjs` and `docker compose -p sync-turn-dev --env-file .env -f deploy/turn.compose.yml up -d --no-build --pull never` for the Sync-owned coturn instance.
 - Restart the local API and open `http://<LAN_IP>:3053` on the other device. The Mac app can keep its existing loopback API address; both reach the same Sync instance. No other service's auth issuer or client is changed.
 
 `npm run test:dev-proxy` checks the proxy route/Host restrictions with test-only HTTP servers. Leave `SYNC_OIDC_AUTHORIZATION_URL` empty in ordinary local or production setup to use the configured issuer's authorization endpoint.
@@ -113,3 +113,5 @@ While a controller socket is active, the backend performs a provider refresh che
 Never log PINs, opaque sessions, provider tokens, device signatures, TURN credentials, or input payloads. Auth refresh/access tokens are AES-256-GCM encrypted at rest with `SYNC_SESSION_ENCRYPTION_KEY`; loss or rotation of that key invalidates existing sessions by design.
 
 Synology production deployment and graceful container replacement are documented in `deploy/synology.md`. The application enables Nest shutdown hooks so `SIGTERM` closes signaling sockets and drains Redis/PostgreSQL providers before exit.
+
+TURN manifests retain file format `3.3` for older Synology `docker-compose` v1. Use `-p sync-turn-dev` with either CLI to preserve project identity; see [TURN deployment](deploy/README.md#synology의-구버전-compose) for validation and TLS startup commands. No Docker/Compose upgrade is required for these manifests.

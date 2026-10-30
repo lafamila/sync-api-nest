@@ -1,4 +1,4 @@
-name: sync-turn-dev
+version: '3.3'
 services:
   turn:
     image: ${SYNC_TURN_IMAGE:-coturn/coturn@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3}
