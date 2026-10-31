@@ -5,7 +5,7 @@ summary: Sync CLI 확장의 계약 생성·native control 인가·live endpoint 
 
 # CLI Session Control - API
 
-Canonical: [전체 계획](../../.idea/SYNC_CLI_SESSION_CONTROL_PLAN.md). **BLOCKED 조건부 초안**: 설정/재시작 없는 현재 세션이라는 확정 조건에서 Claude foreground/Codex CLI provenance gate가 해결되기 전 구현하지 않는다. 사용자 결정은 끝났지만 기술 검증이 남았다. 기존 `SYNC_API_PLAN.md`의 IN_PROGRESS 및 배포 검증과 별도다.
+Canonical: [전체 계획](../../.idea/SYNC_CLI_SESSION_CONTROL_PLAN.md). **BLOCKED 조건부 초안**: 설정/재시작 없는 현재 세션이라는 확정 조건에서 Claude foreground/Codex CLI provenance gate가 해결되기 전 구현하지 않는다. 추가 검증에 따른 Codex 목록 기준 질문은 root에서 결정하며 응답 전 scope를 바꾸지 않는다. 기존 `SYNC_API_PLAN.md`의 IN_PROGRESS 및 배포 검증과 별도다.
 
 ## 책임과 입력
 
