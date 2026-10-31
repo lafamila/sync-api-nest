@@ -16,7 +16,11 @@
       "maxSequence": 9007199254740991, "maxClientVersionLength": 64, "maxCapabilities": 7,
       "minimumModeSeconds": 300, "defaultModeSeconds": 43200, "maximumModeSeconds": 604800, "defaultMaximumModeSeconds": 86400,
       "webIdleTimeoutSeconds": 900, "displaySelectionTimeoutSeconds": 10, "displayRecoveryTimeoutSeconds": 5,
-      "signalingPingIntervalSeconds": 5, "signalingLivenessTimeoutSeconds": 15
+      "signalingPingIntervalSeconds": 5, "signalingLivenessTimeoutSeconds": 15,
+      "cliProtocolVersion": 1, "maxCliTextUtf8Bytes": 16384, "maxCliFrameBytes": 32768,
+      "maxCliSessions": 50, "maxCliNameLength": 128, "maxCliProjectLength": 512, "maxCliCursorLength": 64,
+      "maxCliPendingRequests": 4, "maxCliBufferedBytes": 65536, "maxCliReceipts": 1024,
+      "cliReceiptRetentionSeconds": 86400, "cliRequestTimeoutSeconds": 10
     },
     "proofs": {"registration": "sync:register", "device": "sync:device"},
     "directions": {"get-displays": "controller-to-host", "select-display": "controller-to-host", "displays": "host-to-controller", "display-error": "host-to-controller"}
@@ -29,6 +33,9 @@
     "Capability": {"type":"string", "enum":["screen-host","input-host","host-displays","viewer-displays","multi-window","mode-duration","bounded-lifetime"]},
     "Capabilities": {"type":"array", "items":{"$ref":"#/$defs/Capability"}, "maxItems":7, "uniqueItems":true, "default":[]},
     "ProtocolVersion": {"type":"integer", "minimum":1, "maximum":2, "default":1},
+    "CliProtocolVersion": {"type":"integer", "const":1},
+    "SessionPurpose": {"type":"string", "enum":["screen","cli"], "default":"screen"},
+    "WireCliError": {"type":"string", "enum":["unsupported","stale-target","busy","invalid-sequence","forbidden","unavailable","expired","conflict","not-found","unknown-delivery"]},
     "DisplayId": {"type":"string", "minLength":1, "maxLength":128, "pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "Key": {"type":"string", "enum":["Enter","Backspace","Tab","Escape","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Delete","Home","End","PageUp","PageDown","Space","KeyA","KeyB","KeyC","KeyD","KeyE","KeyF","KeyG","KeyH","KeyI","KeyJ","KeyK","KeyL","KeyM","KeyN","KeyO","KeyP","KeyQ","KeyR","KeyS","KeyT","KeyU","KeyV","KeyW","KeyX","KeyY","KeyZ","Digit0","Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9"]},
     "Modifier": {"type":"string", "enum":["meta","ctrl","alt","shift"]},
@@ -43,12 +50,13 @@
       "id":{"$ref":"#/$defs/UUID"}, "name":{"type":"string","minLength":1,"maxLength":80}, "platform":{"$ref":"#/$defs/NativePlatform"},
       "online":{"type":"boolean"}, "mode":{"$ref":"#/$defs/WireMode","x-nullable":true},
       "protocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "clientVersion":{"type":"string","x-nullable":true,"maxLength":64,"pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"},
-      "capabilities":{"$ref":"#/$defs/Capabilities"}
+      "capabilities":{"$ref":"#/$defs/Capabilities"}, "cliProtocolVersion":{"$ref":"#/$defs/CliProtocolVersion"}
     }},
     "WireRemoteSession": {"type":"object", "additionalProperties":true, "required":["id","hostId","scope","epoch","expiresAt"], "properties":{
       "id":{"$ref":"#/$defs/UUID"}, "hostId":{"$ref":"#/$defs/UUID"}, "controllerId":{"type":"string","x-nullable":true},
       "scope":{"type":"string","enum":["view","control"]}, "epoch":{"$ref":"#/$defs/UUID"}, "expiresAt":{"$ref":"#/$defs/ISODate"},
-      "protocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "capabilities":{"$ref":"#/$defs/Capabilities"}
+      "protocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "capabilities":{"$ref":"#/$defs/Capabilities"},
+      "purpose":{"$ref":"#/$defs/SessionPurpose"}, "cliProtocolVersion":{"$ref":"#/$defs/CliProtocolVersion"}
     }},
     "WireICEServer": {"type":"object", "additionalProperties":true, "required":["urls"], "properties":{
       "urls":{"type":"array","items":{"type":"string","minLength":1},"minItems":1,"maxItems":16}, "username":{"type":"string"}, "credential":{"type":"string"}
@@ -92,6 +100,33 @@
       {"properties":{"type":{"const":"key"}},"required":["key","down"]},
       {"properties":{"type":{"const":"text"}},"required":["text"]}
     ]},
+    "WireCliSession": {"type":"object", "additionalProperties":true, "required":["id","generation","provider","name","project","state","origin","canSend"], "properties":{
+      "id":{"$ref":"#/$defs/UUID"}, "generation":{"$ref":"#/$defs/UUID"}, "provider":{"type":"string","enum":["claude","codex"]},
+      "name":{"type":"string","maxLength":128}, "project":{"type":"string","maxLength":512},
+      "state":{"type":"string","enum":["idle","busy","waiting","unknown"]}, "origin":{"type":"string","enum":["terminal","daemon"]},
+      "canSend":{"type":"boolean"}, "reason":{"$ref":"#/$defs/WireCliError"}
+    }},
+    "WireCliReceipt": {"type":"object", "additionalProperties":true, "required":["commandId","submitSequence","state","updatedAt"], "properties":{
+      "commandId":{"$ref":"#/$defs/UUID"}, "submitSequence":{"type":"integer","minimum":1,"maximum":9007199254740991},
+      "state":{"type":"string","enum":["received","queued","rejected","unknown"]}, "updatedAt":{"$ref":"#/$defs/ISODate"}, "reason":{"$ref":"#/$defs/WireCliError"}
+    }},
+    "WireCliFrame": {"type":"object", "additionalProperties":false, "required":["type","version","op","sessionId","epoch","requestId"], "properties":{
+      "type":{"type":"string","const":"cli","default":"cli"}, "version":{"$ref":"#/$defs/CliProtocolVersion","default":1},
+      "op":{"type":"string","enum":["list","list-result","submit","receipt","receipt-result","error"]},
+      "sessionId":{"$ref":"#/$defs/UUID"}, "epoch":{"$ref":"#/$defs/UUID"}, "requestId":{"$ref":"#/$defs/UUID"},
+      "cursor":{"type":"string","maxLength":64}, "runtimeId":{"$ref":"#/$defs/UUID"},
+      "sessions":{"type":"array","maxItems":50,"items":{"$ref":"#/$defs/WireCliSession"}}, "nextCursor":{"type":"string","maxLength":64},
+      "targetId":{"$ref":"#/$defs/UUID"}, "targetGeneration":{"$ref":"#/$defs/UUID"}, "commandId":{"$ref":"#/$defs/UUID"},
+      "submitSequence":{"type":"integer","minimum":1,"maximum":9007199254740991}, "text":{"type":"string","minLength":1,"x-maxUtf8Bytes":16384},
+      "receipt":{"$ref":"#/$defs/WireCliReceipt"}, "reason":{"$ref":"#/$defs/WireCliError"}
+    }, "oneOf":[
+      {"additionalProperties":false,"properties":{"type":{},"version":{},"op":{"const":"list"},"sessionId":{},"epoch":{},"requestId":{},"cursor":{}}},
+      {"additionalProperties":false,"properties":{"type":{},"version":{},"op":{"const":"list-result"},"sessionId":{},"epoch":{},"requestId":{},"runtimeId":{},"sessions":{},"nextCursor":{}},"required":["runtimeId","sessions"]},
+      {"additionalProperties":false,"properties":{"type":{},"version":{},"op":{"const":"submit"},"sessionId":{},"epoch":{},"requestId":{},"runtimeId":{},"targetId":{},"targetGeneration":{},"commandId":{},"submitSequence":{},"text":{}},"required":["runtimeId","targetId","targetGeneration","commandId","submitSequence","text"]},
+      {"additionalProperties":false,"properties":{"type":{},"version":{},"op":{"const":"receipt"},"sessionId":{},"epoch":{},"requestId":{},"runtimeId":{},"commandId":{},"submitSequence":{}},"required":["runtimeId","commandId","submitSequence"]},
+      {"additionalProperties":false,"properties":{"type":{},"version":{},"op":{"const":"receipt-result"},"sessionId":{},"epoch":{},"requestId":{},"runtimeId":{},"receipt":{}},"required":["runtimeId","receipt"]},
+      {"additionalProperties":false,"properties":{"type":{},"version":{},"op":{"const":"error"},"sessionId":{},"epoch":{},"requestId":{},"reason":{}},"required":["reason"]}
+    ]},
     "WireChallenge": {"type":"object", "additionalProperties":true, "required":["id","nonce","expiresAt"], "properties":{
       "id":{"type":"string","minLength":24,"maxLength":128}, "nonce":{"type":"string","minLength":24,"maxLength":128}, "expiresAt":{"$ref":"#/$defs/ISODate"}
     }},
@@ -117,7 +152,7 @@
       "minimumSeconds":{"type":"integer","minimum":300,"maximum":604800}, "defaultSeconds":{"type":"integer","minimum":300,"maximum":604800}, "maximumSeconds":{"type":"integer","minimum":300,"maximum":604800}
     }},
     "WireFeatureFlags": {"type":"object", "additionalProperties":true, "properties":{
-      "displaySelection":{"type":"boolean","default":false}, "browserIdle":{"type":"boolean","default":false}, "browserRecovery":{"type":"boolean","default":false}
+      "displaySelection":{"type":"boolean","default":false}, "browserIdle":{"type":"boolean","default":false}, "browserRecovery":{"type":"boolean","default":false}, "cliSessions":{"type":"boolean","default":false}
     }},
     "WirePublicConfig": {"type":"object", "additionalProperties":true, "properties":{
       "product":{"type":"string","default":"Sync"}, "version":{"type":"string","default":""}, "authConfigured":{"type":"boolean","default":false}, "webUrl":{"type":"string"},

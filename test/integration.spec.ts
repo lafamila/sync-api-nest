@@ -159,8 +159,9 @@ integration('PostgreSQL and Redis security integration', () => {
         values($1,'owner','Existing native','windows',$2)`,[hostId,Buffer.from('preserved-key')]);
       await query(`insert into sync_remote_sessions(id,owner_account_id,host_device_id,controller_kind,scope,mode_epoch,auth_session_id,expires_at)
         values($1,'owner',$2,'native','control',$3,$4,now()+interval '1 hour')`,[sessionId,hostId,randomUUID(),authId]);
-      await query(SCHEMA_SQL);
-      await query(SCHEMA_SQL);
+      const through3=SCHEMA_SQL.split('do $$ begin').slice(0,3).join('do $$ begin');
+      await query(through3);
+      await query(through3);
       expect((await query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(3);
       expect((await query('select * from sync_remote_sessions where id=$1',[sessionId])).rows[0])
         .toMatchObject({ended_at:null,connection_deadline:null,connected_at:null,authorization_grant_id:null});
@@ -222,6 +223,207 @@ integration('PostgreSQL and Redis security integration', () => {
   function hostPolicyConfig(env:NodeJS.ProcessEnv) {
     return new SyncConfigService(loadConfig({DATABASE_URL:configService.config.databaseUrl,REDIS_URL:configService.config.redisUrl,...env}));
   }
+
+  async function cliFixture() {
+    const f=await nativeFixture();
+    const endpointId=randomUUID();
+    await redis.client.set(redis.key('presence',f.host.id),JSON.stringify({id:endpointId,protocolVersion:2,
+      capabilities:['bounded-lifetime'],cliProtocolVersion:1}),'EX',60);
+    return {...f,endpointId,input:{...f.input,protocolVersion:2,cliProtocolVersion:1,purpose:'cli' as const}};
+  }
+
+  it('applies schema4 additively to populated schema3 and preserves defaults and host uniqueness',async()=>{
+    await db.transaction(async(query)=>{
+      const schema=`sync_cli_migration_${randomUUID().replace(/-/g,'')}`;
+      await query(`create schema ${schema}`);
+      await query(`set local search_path to ${schema}`);
+      await query(SCHEMA_SQL.split('do $$ begin').slice(0,3).join('do $$ begin'));
+      const authId=randomUUID(),hostId=randomUUID(),sessionId=randomUUID(),epoch=randomUUID();
+      await query(`insert into sync_auth_sessions(id,token_hash,csrf_hash,account_id,account_name,permission,platform,
+        access_token_encrypted,refresh_token_encrypted,access_token_expires_at,expires_at)
+        values($1,'preserved-cli-token','csrf','owner','name','member','macos','access','refresh',now()+interval '1 hour',now()+interval '1 day')`,[authId]);
+      await query(`insert into sync_devices(id,owner_account_id,name,platform,public_key_der)
+        values($1,'owner','Preserved Mac','macos',$2)`,[hostId,Buffer.from('preserved-cli-key')]);
+      await query(`insert into sync_remote_sessions(id,owner_account_id,host_device_id,controller_kind,scope,mode_epoch,auth_session_id,expires_at)
+        values($1,'owner',$2,'native','control',$3,$4,now()+interval '1 hour')`,[sessionId,hostId,epoch,authId]);
+      await query(SCHEMA_SQL); await query(SCHEMA_SQL);
+      expect((await query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(4);
+      expect((await query('select * from sync_remote_sessions where id=$1',[sessionId])).rows[0])
+        .toMatchObject({purpose:'screen',cli_protocol_version:null,ended_at:null,mode_epoch:epoch,auth_session_id:authId});
+      const index=await query(`select indexdef from pg_indexes where schemaname=$1 and indexname='sync_one_controller_per_host_idx'`,[schema]);
+      expect(index.rows[0]!.indexdef).toContain('UNIQUE');
+      expect(index.rows[0]!.indexdef).toContain('(host_device_id) WHERE (ended_at IS NULL)');
+      for(const assignment of ["purpose='cli'","purpose='shell'","cli_protocol_version=2","cli_protocol_version=1"]) {
+        await query('savepoint invalid_cli');
+        await expect(query(`update sync_remote_sessions set ${assignment} where id=$1`,[sessionId])).rejects.toMatchObject({code:'23514'});
+        await query('rollback to savepoint invalid_cli');
+      }
+      await query(`drop schema ${schema} cascade`);
+    });
+  });
+
+  it('persists CLI snapshots and keeps host-wide uniqueness across concurrent screen/CLI reservations',async()=>{
+    const f=await cliFixture();
+    const screen={...await f.connectInput(),protocolVersion:2,purpose:'screen' as const};
+    const results=await Promise.allSettled([f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1'),
+      f.service.connect(f.auth,f.host.id,screen,'127.0.0.1')]);
+    expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1);
+    expect(results.filter(result=>result.status==='rejected')).toHaveLength(1);
+    const active=await remoteSessions.listOwned(f.owner.id);
+    expect(active).toHaveLength(1);
+    if(active[0]!.purpose==='cli') expect(active[0]).toMatchObject({cliProtocolVersion:1,authorizationGrantId:f.grant.id,hostEndpointId:f.endpointId});
+  });
+
+  it.each(['screen','cli'] as const)('persists and installs an eligible %s CLI snapshot',async(purpose)=>{
+    const f=await cliFixture();
+    const result=await f.service.connect(f.auth,f.host.id,{...f.input,purpose},'127.0.0.1');
+    expect(result.session).toMatchObject({purpose,cliProtocolVersion:1,protocolVersion:2,scope:'control'});
+    const snapshot=(await remoteSessions.findActive(result.session.id))!;
+    expect(snapshot).toMatchObject({purpose,cliProtocolVersion:1,authorizationGrantId:f.grant.id,hostEndpointId:f.endpointId});
+    await expect(remoteSessions.installController(snapshot,()=>true)).resolves.toMatchObject({purpose,cliProtocolVersion:1});
+  });
+
+  it('advertises device CLI support only while the currently declared endpoint is live',async()=>{
+    const f=await cliFixture();
+    await devices.updateCapabilities(f.owner.id,f.host.id,{protocolVersion:2,capabilities:['bounded-lifetime']});
+    const live=(await f.service.list(f.auth)).devices.find(device=>device.id===f.host.id)!;
+    expect(live).toMatchObject({online:true,cliProtocolVersion:1});
+    await redis.client.del(redis.key('presence',f.host.id));
+    const offline=(await f.service.list(f.auth)).devices.find(device=>device.id===f.host.id)!;
+    expect(offline.online).toBe(false);
+    expect(offline).not.toHaveProperty('cliProtocolVersion');
+  });
+
+  it('requires a real control grant and Mac host under repository locks even for screen CLI snapshots',async()=>{
+    const f=await cliFixture();
+    const base={ownerAccountId:f.owner.id,hostId:f.host.id,controllerDeviceId:f.controller.id,controllerKind:'native' as const,
+      scope:'control' as const,epoch:f.mode.mode!.epoch,authSessionId:f.auth.databaseId,expiresAt:new Date(Date.now()+60000),
+      protocolVersion:2,cliProtocolVersion:1,purpose:'screen' as const,hostEndpointId:f.endpointId,authorizationGrantId:f.grant.id};
+    await expect(remoteSessions.create({...base,authorizationGrantId:undefined})).rejects.toThrow('trusted native control');
+    await db.query(`update sync_device_grants set scope='view' where id=$1`,[f.grant.id]);
+    await expect(remoteSessions.create(base)).rejects.toThrow('trust was revoked');
+    await db.query(`update sync_device_grants set scope='control' where id=$1`,[f.grant.id]);
+    await db.query(`update sync_devices set platform='windows' where id=$1`,[f.host.id]);
+    await expect(remoteSessions.create(base)).rejects.toThrow('Mac host');
+    expect(await remoteSessions.listOwned(f.owner.id)).toEqual([]);
+  });
+
+  it('does not trust a caller-declared native source backed by browser-issued auth',async()=>{
+    const f=await cliFixture();
+    await db.query(`update sync_auth_sessions set platform='web' where id=$1`,[f.auth.databaseId]);
+    await expect(f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1')).rejects.toThrow('authentication session');
+    expect(await remoteSessions.listOwned(f.owner.id)).toEqual([]);
+  });
+
+  it.each(['browser','view','pin','other-owner','other-controller','self-controller','bad-proof','windows','mode-off'] as const)('rejects real CLI admission with %s authority',async(kind)=>{
+    const f=await cliFixture();
+    let auth:Parameters<DeviceService['connect']>[0]=f.auth;
+    let input:Parameters<DeviceService['connect']>[2]=f.input;
+    if(kind==='browser') {
+      const authId=await sessionRepository.create({token:randomOpaque(48),csrfToken:randomOpaque(),account:f.owner,platform:'web',
+        accessToken:'fixture-access',refreshToken:'fixture-refresh',accessTokenExpiresAt:new Date(Date.now()+900000)});
+      auth={...f.auth,databaseId:authId,source:'web',platform:'web'};
+    }
+    if(kind==='view') input={...input,scope:'view'};
+    if(kind==='pin') { await f.revoke('grant'); input={...input,code:f.mode.code!}; }
+    if(kind==='other-owner') auth={...auth,account:{...f.owner,id:'unrelated-owner'}};
+    if(kind==='other-controller') input={...input,controllerDeviceId:randomUUID()};
+    if(kind==='self-controller') input={...input,controllerDeviceId:f.host.id};
+    if(kind==='bad-proof') input={...input,signature:Buffer.alloc(64).toString('base64')};
+    if(kind==='windows') await db.query(`update sync_devices set platform='windows' where id=$1`,[f.host.id]);
+    if(kind==='mode-off') await modes.set(f.owner,f.host,{enabled:false,allowBrowser:false});
+    await expect(f.service.connect(auth,f.host.id,input,'127.0.0.1')).rejects.toMatchObject({status:403});
+    expect(await remoteSessions.listOwned(f.owner.id)).toEqual([]);
+  });
+
+  it('uses current endpoint support instead of persisted Mac metadata and refuses one-use proof replay',async()=>{
+    const f=await cliFixture();
+    await devices.updateCapabilities(f.owner.id,f.host.id,{protocolVersion:2,capabilities:['bounded-lifetime']});
+    await redis.client.set(redis.key('presence',f.host.id),JSON.stringify({id:f.endpointId,protocolVersion:2,
+      capabilities:['bounded-lifetime']}),'EX',60);
+    await expect(f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1')).rejects.toMatchObject({status:426,
+      response:{error:'cli-update-required'}});
+    await expect(f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1')).rejects.toThrow('already used');
+    expect(await remoteSessions.listOwned(f.owner.id)).toEqual([]);
+  });
+
+  it.each(['device','grant','auth'] as const)('rejects CLI creation when %s revocation wins after proof lookup',async(kind)=>{
+    const f=await cliFixture();
+    const reached=deferred(),release=deferred();
+    const activeEndpoint=tickets.activeEndpoint.bind(tickets);
+    const spy=jest.spyOn(tickets,'activeEndpoint').mockImplementationOnce(async(id)=>{
+      reached.resolve();await release.promise;return activeEndpoint(id);
+    });
+    const connecting=f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1');
+    const result=connecting.then(value=>({value}),error=>({error}));
+    try {
+      await reached.promise;
+      await f.revoke(kind);
+      release.resolve();
+      expect(await result).toHaveProperty('error');
+      expect(await remoteSessions.listOwned(f.owner.id)).toEqual([]);
+    } finally { release.resolve();await result;spy.mockRestore(); }
+  });
+
+  it.each(['device','grant','auth'] as const)('refuses stale CLI controller installation after %s revocation',async(kind)=>{
+    const f=await cliFixture();
+    const connected=await f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1');
+    const snapshot=(await remoteSessions.findActive(connected.session.id))!;
+    await f.revoke(kind);
+    const install=jest.fn(()=>true);
+    await expect(remoteSessions.installController(snapshot,install)).rejects.toThrow();
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it('does not rebind CLI endpoints or install snapshots stripped of mandatory authority',async()=>{
+    const f=await cliFixture();
+    const connected=await f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1');
+    const snapshot=(await remoteSessions.findActive(connected.session.id))!;
+    await expect(remoteSessions.bindHostEndpoint(snapshot,randomUUID(),()=>true)).resolves.toBeUndefined();
+    await expect(remoteSessions.bindHostEndpoint({...snapshot,purpose:'screen',cliProtocolVersion:undefined,
+      authorizationGrantId:undefined},f.endpointId,()=>true)).resolves.toBeUndefined();
+    expect((await remoteSessions.findActive(snapshot.id))!.hostEndpointId).toBe(f.endpointId);
+    const install=jest.fn(()=>true);
+    await expect(remoteSessions.installController({...snapshot,purpose:'screen',cliProtocolVersion:undefined,
+      authorizationGrantId:undefined},install)).rejects.toThrow('closed during controller installation');
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it('rejects CLI auth expiry after waiting for the installation row lock',async()=>{
+    const f=await cliFixture();
+    const connected=await f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1');
+    const snapshot=(await remoteSessions.findActive(connected.session.id))!;
+    await db.query(`update sync_auth_sessions set expires_at=clock_timestamp()+interval '200 milliseconds' where id=$1`,[f.auth.databaseId]);
+    const install=jest.fn(()=>true);
+    let installing:Promise<unknown>|undefined;
+    await db.transaction(async(query)=>{
+      await query('select id from sync_remote_sessions where id=$1 for update',[snapshot.id]);
+      installing=remoteSessions.installController(snapshot,install).catch(error=>error);
+      await waitForBlockedQuery('select id from sync_remote_sessions where id=$1 for update%');
+      await query('select pg_sleep(0.25)');
+    });
+    expect(await installing).toBeInstanceOf(Error);
+    expect(install).not.toHaveBeenCalled();
+    expect(await remoteSessions.findOwned(f.owner.id,snapshot.id)).toMatchObject({connectedAt:null});
+  });
+
+  it('cleans a CLI reservation if mode or the live endpoint changes after INSERT',async()=>{
+    for(const kind of ['mode','endpoint'] as const) {
+      const f=await cliFixture();
+      const create=remoteSessions.create.bind(remoteSessions);
+      const spy=jest.spyOn(remoteSessions,'create').mockImplementationOnce(async(input)=>{
+        const remote=await create(input);
+        if(kind==='mode') await modes.set(f.owner,f.host,{enabled:false,allowBrowser:false});
+        else await redis.client.set(redis.key('presence',f.host.id),JSON.stringify({id:randomUUID(),protocolVersion:2,
+          capabilities:['bounded-lifetime'],cliProtocolVersion:1}),'EX',60);
+        return remote;
+      });
+      try {
+        await expect(f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1')).rejects.toThrow();
+        expect(await remoteSessions.listOwned(f.owner.id)).toEqual([]);
+      } finally { spy.mockRestore(); }
+    }
+  });
 
   function deviceServiceFor(config:SyncConfigService) {
     return new DeviceService(devices,proofs,modes,remoteSessions,tickets,new IceService(config),redis,revocations,config);

@@ -88,6 +88,15 @@ export class ApproveGrantDto extends DeviceProofDto {
 }
 
 export class ConnectDeviceDto extends EndpointMetadataDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsIn(['screen', 'cli'])
+  purpose?: 'screen' | 'cli';
+
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsInt()
+  @IsIn([SYNC_LIMITS.cliProtocolVersion])
+  cliProtocolVersion?: number;
+
   @IsOptional()
   @Matches(/^\d{6}$/)
   code?: string;
@@ -128,6 +137,11 @@ export class CapabilityUpdateDto extends DeviceMetadataDto {
 }
 
 export class DeviceTicketDto extends EndpointMetadataDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsInt()
+  @IsIn([SYNC_LIMITS.cliProtocolVersion])
+  cliProtocolVersion?: number;
+
   @IsUUID()
   deviceId!: string;
   @IsString()

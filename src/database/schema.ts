@@ -118,4 +118,18 @@ do $$ begin
     insert into sync_schema_migrations(version) values(3);
   end if;
 end $$;
+
+do $$ begin
+  if not exists(select 1 from sync_schema_migrations where version=4) then
+    alter table sync_remote_sessions add column purpose text not null default 'screen'
+      check(purpose in ('screen','cli'));
+    alter table sync_remote_sessions add column cli_protocol_version integer
+      check(cli_protocol_version is null or cli_protocol_version=1);
+    alter table sync_remote_sessions add constraint sync_cli_session_consistency check(
+      (purpose<>'cli' or cli_protocol_version is not null) and
+      (cli_protocol_version is null or (protocol_version>=2 and controller_kind='native' and scope='control'
+        and controller_device_id is not null and authorization_grant_id is not null and host_endpoint_id is not null)));
+    insert into sync_schema_migrations(version) values(4);
+  end if;
+end $$;
 `;

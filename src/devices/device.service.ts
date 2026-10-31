@@ -10,7 +10,7 @@ import { ApproveGrantDto, BrowserRecoveryDto, CapabilityUpdateDto, ConnectDevice
 import { DeviceProofService } from './device-proof.service';
 import { DeviceRepository } from './device.repository';
 import { ModeService } from './mode.service';
-import { endpointFeatures, negotiate, requireBoundedHost, requireWebProtocol } from '../common/protocol';
+import { EndpointFeatures, endpointFeatures, negotiate, requireBoundedHost, requireCliProtocol, requireWebProtocol } from '../common/protocol';
 import { randomOpaque, sha256 } from '../common/crypto';
 import { WireBrowserActivityState } from '../generated/sync-wire';
 
@@ -34,17 +34,17 @@ export class DeviceService {
     await this.proofs.verify(session.account,input,id);
     const device=await this.devices.updateCapabilities(session.account.id,id,input);
     if (!device) throw new NotFoundException('Device not found');
-    return { device:{...presentDevice(device),online:Boolean(await this.tickets.activeEndpoint(id)),
+    const endpoint=await this.tickets.activeEndpoint(id);
+    return { device:{...presentDevice(device,endpoint),online:Boolean(endpoint),
       mode:await this.modes.get(session.account.id,id)} };
   }
 
   async list(session: AuthSessionContext) {
     const devices = await this.devices.listOwned(session.account.id);
-    return { devices: await Promise.all(devices.map(async (device) => ({
-      ...presentDevice(device),
-      online: Boolean(await this.redis.client.get(this.redis.key('presence', device.id))),
-      mode: await this.modes.get(session.account.id, device.id),
-    }))) };
+    return { devices: await Promise.all(devices.map(async (device) => {
+      const endpoint=await this.tickets.activeEndpoint(device.id);
+      return {...presentDevice(device,endpoint),online:Boolean(endpoint),mode:await this.modes.get(session.account.id,device.id)};
+    })) };
   }
 
   async remove(session: AuthSessionContext, id: string, proof: DeviceProofDto): Promise<{ ok: true }> {
@@ -90,10 +90,18 @@ export class DeviceService {
   }
 
   async connect(session: AuthSessionContext, hostId: string, input: ConnectDeviceDto, ip: string) {
+    const purpose=input.purpose ?? 'screen';
+    if(purpose==='cli' && (session.source!=='native' || input.scope!=='control')) {
+      throw new ForbiddenException('CLI sessions require trusted native control');
+    }
     if(session.source==='web') requireWebProtocol(input.protocolVersion);
     if(input.rememberDevice) throw new BadRequestException('rememberDevice cannot create trust; approve the controller from the host device');
     const host = await this.devices.findOwned(session.account.id,hostId);
-    if (!host) throw new NotFoundException('Host device not found');
+    if (!host) {
+      if(purpose==='cli') throw new ForbiddenException('CLI host is not authorized');
+      throw new NotFoundException('Host device not found');
+    }
+    if(purpose==='cli' && host.platform!=='macos') throw new ForbiddenException('CLI sessions require a Mac host');
     if (isMobile(host.platform) && input.scope !== 'view') throw new ForbiddenException('Mobile hosts support view-only sessions');
     let mode = await this.modes.require(session.account.id,hostId);
     let controllerDeviceId: string | undefined;
@@ -107,16 +115,28 @@ export class DeviceService {
       if (!input.code) throw new ForbiddenException('Current six-digit PIN is required');
       mode = await this.modes.verifyPin(session.account,hostId,input.code,ip);
     } else {
-      if (!input.controllerDeviceId || !input.challengeId || !input.signature) throw new BadRequestException('Native connection requires device proof');
+      if (!input.controllerDeviceId || !input.challengeId || !input.signature) {
+        if(purpose==='cli') throw new ForbiddenException('CLI sessions require native device proof');
+        throw new BadRequestException('Native connection requires device proof');
+      }
       controllerDeviceId = input.controllerDeviceId;
-      if (controllerDeviceId === hostId) throw new BadRequestException('Host and controller devices must differ');
-      await this.proofs.verify(session.account, {
-        deviceId:controllerDeviceId, challengeId:input.challengeId, signature:input.signature,
-      });
+      if (controllerDeviceId === hostId) {
+        if(purpose==='cli') throw new ForbiddenException('CLI controller must differ from the host');
+        throw new BadRequestException('Host and controller devices must differ');
+      }
+      try {
+        await this.proofs.verify(session.account, {
+          deviceId:controllerDeviceId, challengeId:input.challengeId, signature:input.signature,
+        });
+      } catch(error) {
+        if(purpose==='cli' && error instanceof NotFoundException) throw new ForbiddenException('CLI controller is not authorized');
+        throw error;
+      }
       const grant = await this.devices.findGrant(session.account.id,hostId,controllerDeviceId);
       const grantAllows = grant && (grant.scope === 'control' || input.scope === 'view');
       const requiresPin = !grantAllows;
       if(grantAllows) authorizationGrantId=grant.id;
+      if(purpose==='cli' && (!grant || grant.scope!=='control')) throw new ForbiddenException('CLI sessions require a control grant');
       if (requiresPin) {
         if(isMobile(host.platform) || !mode.allowBrowser) {
           throw new ForbiddenException('Untrusted temporary connections are disabled for this host');
@@ -127,13 +147,17 @@ export class DeviceService {
     }
     const endpoint=await this.tickets.activeEndpoint(hostId);
     if (!endpoint) throw new ForbiddenException('Host device is offline');
-    requireBoundedHost(endpoint,this.config.config.requireBoundedHosts);
     const features=negotiate(endpoint,endpointFeatures(input));
+    const cliEligible=session.source==='native' && host.platform==='macos' && input.scope==='control' && Boolean(authorizationGrantId);
+    if(!cliEligible) delete features.cliProtocolVersion;
+    if(purpose==='cli') requireCliProtocol(features,endpoint,this.config.config.requireBoundedHosts);
+    else requireBoundedHost(endpoint,this.config.config.requireBoundedHosts);
+    if(purpose==='cli') features.capabilities=[];
     const activityToken=session.source==='web'?randomOpaque(32):undefined;
     const expiresAt = new Date(Math.min(Date.parse(mode.expiresAt), Date.now() + this.config.config.remoteSessionTtlSeconds * 1000));
     const remote = await this.sessions.create({ ownerAccountId:session.account.id,hostId,controllerDeviceId,
       controllerKind:session.source === 'web' ? 'browser' : 'native',scope:input.scope,epoch:mode.epoch,
-      authSessionId:session.databaseId,expiresAt,...features,hostEndpointId:endpoint.id,
+      authSessionId:session.databaseId,expiresAt,...features,purpose,hostEndpointId:endpoint.id,
       authorizationGrantId,connectionTimeoutSeconds:this.config.config.ticketTtlSeconds,
       activityTokenHash:activityToken?sha256(activityToken):undefined,idleTimeoutSeconds:this.config.config.webIdleTimeoutSeconds });
     try {
@@ -202,12 +226,14 @@ export class DeviceService {
 
 export function presentSession(session: import('../sessions/remote-session.repository').RemoteSession) {
   return { id:session.id,hostId:session.hostId,controllerId:session.controllerId,scope:session.scope,epoch:session.epoch,expiresAt:session.expiresAt,
-    protocolVersion:session.protocolVersion,capabilities:session.capabilities };
+    protocolVersion:session.protocolVersion,capabilities:session.capabilities,purpose:session.purpose ?? 'screen',
+    ...(session.cliProtocolVersion===undefined?{}:{cliProtocolVersion:session.cliProtocolVersion}) };
 }
 
-export function presentDevice(device:import('./device.repository').Device) {
+export function presentDevice(device:import('./device.repository').Device,endpoint?:EndpointFeatures) {
   return {id:device.id,name:device.name,platform:device.platform,protocolVersion:device.protocolVersion,
-    capabilities:device.capabilities,...(device.clientVersion?{clientVersion:device.clientVersion}:{})};
+    capabilities:device.capabilities,...(device.clientVersion?{clientVersion:device.clientVersion}:{}),
+    ...(endpoint?.cliProtocolVersion===undefined?{}:{cliProtocolVersion:endpoint.cliProtocolVersion})};
 }
 
 function isMobile(platform:string) { return platform==='ios' || platform==='android'; }

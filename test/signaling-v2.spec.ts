@@ -48,6 +48,103 @@ function connection(ticket:TicketPayload):Connection {
 }
 
 describe('v2 signaling isolation',()=>{
+  function cliFixture() {
+    const f=fixture();
+    Object.assign(f.remote,{scope:'control',purpose:'cli',cliProtocolVersion:1,hostEndpointId:f.host.id,authorizationGrantId:randomUUID()});
+    Object.assign(f.host.ticket,{platform:'macos',cliProtocolVersion:1});
+    return f;
+  }
+  it('publishes identical CLI session snapshots in controller ready and host session-start',async()=>{
+    const f=cliFixture();
+    try {
+      await f.internal.registerController(f.controller);
+      const ready=JSON.parse(f.controller.socket.send.mock.calls[0][0]);
+      const start=JSON.parse(f.host.socket.send.mock.calls[0][0]);
+      expect(ready.session).toEqual(start.session);
+      expect(start.session).toMatchObject({purpose:'cli',cliProtocolVersion:1,scope:'control'});
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it('stores only the current device ticket CLI declaration in presence',async()=>{
+    const f=cliFixture();
+    try {
+      f.sessions.findActiveForHost.mockResolvedValue([]);
+      await f.internal.registerDevice(f.host);
+      const first=JSON.parse(f.redis.client.set.mock.calls[0]![1]);
+      expect(first).toMatchObject({id:f.host.id,cliProtocolVersion:1});
+      const replacement=connection({...f.host.ticket,cliProtocolVersion:undefined} as TicketPayload);
+      await f.internal.registerDevice(replacement);
+      const last=JSON.parse(f.redis.client.set.mock.calls.at(-1)![1]);
+      expect(last.id).toBe(replacement.id);
+      expect(last).not.toHaveProperty('cliProtocolVersion');
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it('ends CLI authority rather than rebinding it even when the replacement declares the same support',async()=>{
+    const f=cliFixture();
+    try {
+      const replacement=connection(f.host.ticket);
+      await f.internal.registerDevice(replacement);
+      expect(f.sessions.endIfActive).toHaveBeenCalledWith('owner',f.remote.id,'host_protocol_changed');
+      expect(f.sessions.bindHostEndpoint).not.toHaveBeenCalled();
+      expect(replacement.socket.send.mock.calls.map(([json])=>JSON.parse(json).type)).toEqual(['ready']);
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it('rejects an old controller ticket against a compatible but different host generation',async()=>{
+    const f=cliFixture();
+    try {
+      f.internal.devices.set(f.remote.hostId,connection(f.host.ticket));
+      await expect(f.internal.registerController(f.controller)).rejects.toThrow('host endpoint incompatible');
+      expect(f.sessions.installController).not.toHaveBeenCalled();
+      expect(f.host.socket.send).not.toHaveBeenCalled();
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it('checks mode again after controller installation commits',async()=>{
+    const f=cliFixture();
+    try {
+      f.sessions.installController.mockImplementation(async(snapshot,install)=>{
+        expect(install(snapshot)).toBe(true);
+        f.remote.epoch=randomUUID();
+        return snapshot;
+      });
+      await expect(f.internal.registerController(f.controller)).rejects.toThrow('closed during registration');
+      expect(f.host.socket.send).not.toHaveBeenCalled();
+      expect(f.controller.socket.send).not.toHaveBeenCalled();
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it('re-reads the current host after awaiting the final mode check',async()=>{
+    const f=cliFixture();
+    const internal=f.service as unknown as {modeMatches(session:RemoteSession):Promise<boolean>};
+    const mode=jest.spyOn(internal,'modeMatches').mockResolvedValueOnce(true).mockImplementationOnce(async()=>{
+      f.internal.devices.set(f.remote.hostId,connection(f.host.ticket));
+      return true;
+    });
+    try {
+      await expect(f.internal.registerController(f.controller)).rejects.toThrow('closed during registration');
+      expect(f.host.socket.send).not.toHaveBeenCalled();
+      expect(f.controller.socket.send).not.toHaveBeenCalled();
+    } finally { mode.mockRestore();await f.service.onModuleDestroy(); }
+  });
+  it('does not publish CLI session-start if absolute expiry elapses during the final mode lookup',async()=>{
+    const f=cliFixture();
+    const internal=f.service as unknown as {modeMatches(session:RemoteSession):Promise<boolean>};
+    const mode=jest.spyOn(internal,'modeMatches').mockResolvedValueOnce(true).mockImplementationOnce(async()=>{
+      f.remote.expiresAt=new Date(Date.now()-1).toISOString();
+      return true;
+    });
+    try {
+      await expect(f.internal.registerController(f.controller)).rejects.toThrow('closed during registration');
+      expect(f.host.socket.send).not.toHaveBeenCalled();
+      expect(f.controller.socket.send).not.toHaveBeenCalled();
+    } finally { mode.mockRestore();await f.service.onModuleDestroy(); }
+  });
+  it('rejects displays on CLI-only sessions and never relays CLI bodies through signaling',async()=>{
+    const f=cliFixture();
+    try {
+      await f.send(f.controller,{type:'get-displays',sessionId:f.remote.id});
+      await f.send(f.controller,{type:'cli',sessionId:f.remote.id,text:'must-not-relay'});
+      expect(f.host.socket.send).not.toHaveBeenCalled();
+      expect(f.controller.socket.close).toHaveBeenCalled();
+    } finally { await f.service.onModuleDestroy(); }
+  });
   it('permits a media-v1 controller on an updated host when bounded hosts are required',async()=>{
     const f=fixture(true);
     try {

@@ -58,6 +58,8 @@ npm run test:contracts
 
 ## HTTP contract
 
+Native mobile CLI list/send, authority, additive migration4 and rollout are documented in [CLI sessions](docs/cli-sessions.md). This optional extension does not enable browser/PIN CLI or add a service/env key.
+
 All routes use `/api`. Browser auth uses the HttpOnly `sync_session` cookie and a strict `sync_csrf` double-submit cookie on mutations. Native clients send only their opaque value in `X-Sync-Session`. Device-changing native operations additionally require a one-use P-256 proof.
 
 - `GET /api/health`, `GET /api/config`

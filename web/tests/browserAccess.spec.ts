@@ -15,7 +15,7 @@ test("web consumes the shared schema hash, all DTO fixtures, UTF8 keys and optio
   const legacy = decodeWire<PublicConfig>("WirePublicConfig",{});
   expect(legacy.protocolVersion).toBe(1);
   expect(legacy.capabilities).toEqual([]);
-  expect(legacy.features).toEqual({displaySelection:false,browserIdle:false,browserRecovery:false});
+  expect(legacy.features).toEqual({displaySelection:false,browserIdle:false,browserRecovery:false,cliSessions:false});
 });
 
 test("server clock offset owns expiry and late activity can never revive access", () => {

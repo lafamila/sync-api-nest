@@ -3,11 +3,11 @@ import { randomOpaque, sha256 } from '../common/crypto';
 import { SyncConfigService } from '../config/config.service';
 import { RedisService } from '../redis/redis.service';
 import { Device } from '../devices/device.repository';
-import { ActiveEndpoint } from '../common/protocol';
+import { ActiveEndpoint, endpointFeatures } from '../common/protocol';
 
 export type TicketPayload =
   | { role: 'device'; ownerAccountId: string; deviceId: string; platform: Device['platform']; authSessionId:string;
-      protocolVersion?: number; capabilities?: string[] }
+      protocolVersion?: number; capabilities?: string[]; cliProtocolVersion?: number }
   | { role: 'controller'; ownerAccountId: string; sessionId: string; browser: boolean; authSessionId: string };
 
 @Injectable()
@@ -33,7 +33,9 @@ export class TicketService {
     if (!raw) return undefined;
     try {
       const value = JSON.parse(raw) as ActiveEndpoint;
-      if (typeof value.id === 'string' && Number.isInteger(value.protocolVersion) && Array.isArray(value.capabilities)) return value;
+      if (typeof value.id === 'string' && Number.isInteger(value.protocolVersion) && Array.isArray(value.capabilities)) {
+        return {id:value.id,...endpointFeatures(value)};
+      }
     } catch { /* Legacy presence is an opaque socket identifier. */ }
     return { id: raw, protocolVersion: 1, capabilities: [] };
   }

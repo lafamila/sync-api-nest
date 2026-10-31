@@ -115,7 +115,7 @@ export class SignalingService implements OnModuleDestroy {
       const active=await this.sessions.findActiveForHost(device.id);
       for(const session of active) {
         if(this.hostRegistrations.get(device.id)!==connection.id) throw new Error('host registration superseded');
-        if(!supportsSession(endpointFeatures(ticket),session,this.config.config.requireBoundedHosts)) {
+        if(!this.supportsHost(connection,session)) {
           await this.sessions.endIfActive(session.ownerAccountId,session.id,'host_protocol_changed');
         }
       }
@@ -130,7 +130,7 @@ export class SignalingService implements OnModuleDestroy {
       for(const session of await this.sessions.findActiveForHost(device.id)) {
         if(!this.isCurrent(connection)) return;
         if(ended.has(session.id)) continue;
-        if(!supportsSession(endpointFeatures(ticket),session,this.config.config.requireBoundedHosts)) {
+        if(!this.supportsHost(connection,session)) {
           await this.sessions.endIfActive(session.ownerAccountId,session.id,'host_protocol_changed');
           continue;
         }
@@ -159,7 +159,7 @@ export class SignalingService implements OnModuleDestroy {
       if(!session || session.ownerAccountId!==ticket.ownerAccountId || session.authSessionId!==ticket.authSessionId) throw new Error('session invalid');
       if(!await this.modeMatches(session)) { await this.sessions.endIfActive(session.ownerAccountId,session.id,'mode_invalid'); throw new Error('mode invalid'); }
       const activeHost=this.devices.get(session.hostId);
-      if(!activeHost || activeHost.ticket.role!=='device' || !supportsSession(endpointFeatures(activeHost.ticket),session,this.config.config.requireBoundedHosts)) {
+      if(!activeHost || !this.supportsHost(activeHost,session)) {
         await this.sessions.endIfActive(session.ownerAccountId,session.id,'host_protocol_changed');
         throw new Error('host endpoint incompatible');
       }
@@ -169,16 +169,18 @@ export class SignalingService implements OnModuleDestroy {
         const host=this.devices.get(current.hostId);
         if(this.stopping || connection.socket.readyState!==WebSocket.OPEN || this.snapshotRevoked(ended,connection,current) ||
           host!==activeHost || host.socket.readyState!==WebSocket.OPEN || host.ticket.role!=='device' ||
-          !supportsSession(endpointFeatures(host.ticket),current,this.config.config.requireBoundedHosts)) return false;
+          !this.supportsHost(host,current)) return false;
         previous=this.controllers.get(current.id);
         this.controllers.set(current.id,connection);
         this.sessionHosts.set(current.id,current.hostId);
         return true;
       });
+      const modeValid=await this.modeMatches(installed);
       const host=this.devices.get(installed.hostId);
       if(!this.isCurrent(connection) || connection.socket.readyState!==WebSocket.OPEN || this.stopping ||
+        !modeValid || Date.parse(installed.expiresAt)<=Date.now() ||
         this.snapshotRevoked(ended,connection,installed) || host!==activeHost || host.socket.readyState!==WebSocket.OPEN ||
-        host.ticket.role!=='device' || !supportsSession(endpointFeatures(host.ticket),installed,this.config.config.requireBoundedHosts)) throw new Error('session closed during registration');
+        host.ticket.role!=='device' || !this.supportsHost(host,installed)) throw new Error('session closed during registration');
       this.send(connection.socket,{type:'ready',session:presentSession(installed)});
       if(previous && previous.id!==connection.id) previous.socket.close(4001,'connection replaced');
       this.sendSessionStart(host.socket,installed);
@@ -206,6 +208,7 @@ export class SignalingService implements OnModuleDestroy {
         return this.reject(connection.socket,'session invalid');
       }
       if(!this.isCurrent(connection) || connection.socket.readyState!==WebSocket.OPEN || this.snapshotRevoked(ended,connection,session) || session.ownerAccountId!==connection.ticket.ownerAccountId) return this.reject(connection.socket,'route denied');
+      if(display && session.purpose==='cli') return this.reject(connection.socket,'CLI sessions do not support displays');
       if(display && (session.protocolVersion<2 || !session.capabilities.includes('host-displays') || !session.capabilities.includes('viewer-displays'))) {
         return this.reject(connection.socket,'display signaling not negotiated');
       }
@@ -214,7 +217,7 @@ export class SignalingService implements OnModuleDestroy {
           (display ? !['get-displays','select-display'].includes(String(message.type)) : message.type==='answer')) return this.reject(connection.socket,'route denied');
         const signal=display?canonicalDisplaySignal(message):canonicalSignal(message); if(!signal) return this.reject(connection.socket,'invalid signaling payload');
         const host=this.devices.get(session.hostId); if(!host) return this.reject(connection.socket,'host offline');
-        if(host.ticket.role!=='device' || !supportsSession(endpointFeatures(host.ticket),session,this.config.config.requireBoundedHosts)) {
+        if(!this.supportsHost(host,session)) {
           await this.sessions.endIfActive(session.ownerAccountId,session.id,'host_protocol_changed');
           return this.reject(connection.socket,'host endpoint incompatible');
         }
@@ -222,7 +225,7 @@ export class SignalingService implements OnModuleDestroy {
       }
       if(connection.ticket.deviceId!==session.hostId ||
         (display ? !['displays','display-error'].includes(String(message.type)) : message.type==='offer')) return this.reject(connection.socket,'route denied');
-      if(!supportsSession(endpointFeatures(connection.ticket),session,this.config.config.requireBoundedHosts)) return this.reject(connection.socket,'host endpoint incompatible');
+      if(!this.supportsHost(connection,session)) return this.reject(connection.socket,'host endpoint incompatible');
       const signal=display?canonicalDisplaySignal(message):canonicalSignal(message); if(!signal) return this.reject(connection.socket,'invalid signaling payload');
       const controller=this.controllers.get(session.id); if(controller) this.send(controller.socket,signal);
     } finally { this.pendingSnapshots.delete(ended); }
@@ -351,6 +354,13 @@ export class SignalingService implements OnModuleDestroy {
   private async modeMatches(session:RemoteSession):Promise<boolean> {
     const mode=await this.modes.get(session.ownerAccountId,session.hostId);
     return Boolean(mode && mode.epoch===session.epoch);
+  }
+  private supportsHost(connection:Connection,session:RemoteSession):boolean {
+    if(connection.ticket.role!=='device' || !supportsSession(endpointFeatures(connection.ticket),session,this.config.config.requireBoundedHosts)) return false;
+    if(session.purpose==='cli' && session.cliProtocolVersion===undefined) return false;
+    return session.cliProtocolVersion===undefined || (session.hostEndpointId===connection.id && connection.ticket.platform==='macos' &&
+      connection.ticket.ownerAccountId===session.ownerAccountId && session.controllerKind==='native' && session.scope==='control' &&
+      Boolean(session.controllerDeviceId && session.authorizationGrantId));
   }
   private sendSessionStart(socket:WebSocket,session:RemoteSession):void {
     this.send(socket,{type:'session-start',session:presentSession(session),iceServers:this.ice.forAccount({id:session.ownerAccountId,name:'',permission:'member'})});

@@ -1,11 +1,11 @@
 ---
-status: PREPARED
-summary: Sync CLI 확장의 계약 생성·native control 인가·live endpoint 협상·data-only session을 추가하는 조건부 API 계획
+status: COMPLETED
+summary: Sync CLI1 계약 생성·native control 인가·live endpoint 협상·data-only session 구현 및 격리 검증 완료
 ---
 
 # CLI Session Control - API
 
-Canonical: [전체 계획](../../.idea/SYNC_CLI_SESSION_CONTROL_PLAN.md). **BLOCKED 조건부 초안**: 설정/재시작 없는 현재 세션이라는 확정 조건에서 Claude foreground/Codex CLI provenance gate가 해결되기 전 구현하지 않는다. 추가 검증에 따른 Codex 목록 기준 질문은 root에서 결정하며 응답 전 scope를 바꾸지 않는다. 기존 `SYNC_API_PLAN.md`의 IN_PROGRESS 및 배포 검증과 별도다.
+Canonical: [전체 계획](../../../.idea/completed/SYNC_CLI_SESSION_CONTROL_PLAN.md), [실행 계약](../../../.docs/SYNC_CLI_PROTOCOL.md). 사용자/기술 gate PASS, 구현·격리 검증 완료. Codex live daemon 목록은 사용자 허용된 선택적 확장이며 target 재시작/복제 금지는 유지한다. 기존 Sync 계획과 별도다.
 
 ## 책임과 입력
 
@@ -31,5 +31,7 @@ Canonical: [전체 계획](../../.idea/SYNC_CLI_SESSION_CONTROL_PLAN.md). **BLOC
 - `node scripts/generate-contracts.mjs --check`, generator tests, API build/test, web build/browser 회귀. 최신 정확한 명령은 package.json/README를 확인한다.
 
 ## 인계 및 마무리
+
+2026-10-31 완료: unit116/격리 integration77, contracts17/출력10, web49 및 build/lint/typecheck 통과. migration4는 additive이며 dev/prod에는 적용하지 않았다. `docs/cli-sessions.md`에 rollout/한계/수동 검증을 기록했다. 배포/auth/env 변경은 없다.
 
 계약 field/limit/error shape/생성 hash/migration/실제 실행 명령과 결과를 보고한다. device proof나 기존 scope를 약화해야 한다면 중단 후 orchestrator에게 전달한다. 사용자에게 필요한 추가 env/onboarding이 생기면 명시하고 임의 등록하지 않는다. README/CLAUDE/공통 프로토콜 문서 영향은 orchestrator와 맞춘다. 사용자 데이터·기존 로컬/운영 서비스를 변경하지 않는다. root와 함께 상태를 전환하며 완료 시 `.idea/completed/`로 이동한다.
