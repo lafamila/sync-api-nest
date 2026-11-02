@@ -1,0 +1,26 @@
+{
+  "expiresAt" : 1796172198,
+  "issuedAt" : 1793580198,
+  "keyID" : "release-v1",
+  "minimumBrokerVersion" : 1,
+  "profiles" : [
+    {
+      "byteCount" : 1657,
+      "id" : "claude-native-v1",
+      "path" : "claude-native-v1.json",
+      "sha256" : "acb6a57b5c0a988d8e3e3a3e505a862c0a0ba3ca370d2a7e94133a99650b428d"
+    },
+    {
+      "byteCount" : 1904,
+      "id" : "codex-native-v1",
+      "path" : "codex-native-v1.json",
+      "sha256" : "0df462d715df1b1a0053898c17b43d57a2682fb33a86774b04dd73f87b24fde7"
+    }
+  ],
+  "revokedProfileIDs" : [
+
+  ],
+  "schemaVersion" : 1,
+  "securityFloor" : 1,
+  "sequence" : 1
+}

@@ -246,7 +246,8 @@ integration('PostgreSQL and Redis security integration', () => {
         values($1,'owner','Preserved Mac','macos',$2)`,[hostId,Buffer.from('preserved-cli-key')]);
       await query(`insert into sync_remote_sessions(id,owner_account_id,host_device_id,controller_kind,scope,mode_epoch,auth_session_id,expires_at)
         values($1,'owner',$2,'native','control',$3,$4,now()+interval '1 hour')`,[sessionId,hostId,epoch,authId]);
-      await query(SCHEMA_SQL); await query(SCHEMA_SQL);
+      const through4=SCHEMA_SQL.split('do $$ begin').slice(0,4).join('do $$ begin');
+      await query(through4); await query(through4);
       expect((await query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(4);
       expect((await query('select * from sync_remote_sessions where id=$1',[sessionId])).rows[0])
         .toMatchObject({purpose:'screen',cli_protocol_version:null,ended_at:null,mode_epoch:epoch,auth_session_id:authId});

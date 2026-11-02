@@ -20,5 +20,5 @@ export class HealthController {
     modeDuration:{minimumSeconds:SYNC_LIMITS.minimumModeSeconds,defaultSeconds:this.config.config.modeDefaultTtlSeconds,maximumSeconds:this.config.config.modeMaxTtlSeconds},
     webIdleTimeoutSeconds:this.config.config.webIdleTimeoutSeconds,
     requireBoundedHosts:this.config.config.requireBoundedHosts,
-    features:{displaySelection:true,browserIdle:true,browserRecovery:true,cliSessions:true} }; }
+    features:{displaySelection:true,browserIdle:true,browserRecovery:true,cliSessions:true,cliChat:true} }; }
 }

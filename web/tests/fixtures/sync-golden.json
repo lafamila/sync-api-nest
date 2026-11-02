@@ -1,5 +1,5 @@
 {
-  "schemaHash": "8dada7ecea82716675ffdb8a63a4c05400c3a5e0c608f28c294c3743c9663570",
+  "schemaHash": "d064023b4a2809fc99c2b6120ca28c7e5c4a8cbb339106542b32b36fc7b4da46",
   "description": "Public interoperable fixtures only. Never use this deterministic test key or nonce for authentication.",
   "proofs": {
     "testOnly": true,
@@ -30,6 +30,385 @@
     ]
   },
   "valid": [
+    {
+      "name": "cli-chat-oversized-warning",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false,
+        "warning": "oversized-record"
+      }
+    },
+    {
+      "name": "cli-chat-malformed-warning",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "tail-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": true,
+        "warning": "malformed-record"
+      }
+    },
+    {
+      "name": "cli-chat-content-warning",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "content-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false,
+        "warning": "oversized-record"
+      }
+    },
+    {
+      "name": "cli-chat-message",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 0,
+        "hasMoreContent": false,
+        "state": "complete"
+      }
+    },
+    {
+      "name": "cli-chat-message-segment",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 1,
+        "hasMoreContent": true,
+        "state": "streaming",
+        "contentCursor": "opaque-next-segment",
+        "providerTurnId": "public-fixture-turn",
+        "commandId": "88888888-8888-4888-8888-888888888888",
+        "timestamp": "2026-11-02T00:00:00Z"
+      }
+    },
+    {
+      "name": "cli-chat-feature-config",
+      "model": "WirePublicConfig",
+      "value": {
+        "protocolVersion": 2,
+        "features": {
+          "cliSessions": true,
+          "cliChat": true
+        }
+      }
+    },
+    {
+      "name": "cli-chat-session",
+      "model": "WireRemoteSession",
+      "value": {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "hostId": "11111111-1111-4111-8111-111111111111",
+        "scope": "control",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "expiresAt": "2026-11-02T12:00:00Z",
+        "protocolVersion": 2,
+        "purpose": "cli",
+        "cliProtocolVersion": 1,
+        "cliChatProtocolVersion": 1
+      }
+    },
+    {
+      "name": "cli-chat-history",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history"
+      }
+    },
+    {
+      "name": "cli-chat-older",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history",
+        "cursor": "opaque-older-cursor"
+      }
+    },
+    {
+      "name": "cli-chat-history-result",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false
+      }
+    },
+    {
+      "name": "cli-chat-progress",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": true
+      }
+    },
+    {
+      "name": "cli-chat-reset",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": true,
+        "progress": false
+      }
+    },
+    {
+      "name": "cli-chat-tail",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "tail",
+        "cursor": "opaque-tail-cursor"
+      }
+    },
+    {
+      "name": "cli-chat-tail-result",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "tail-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [],
+        "hasMore": false,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false
+      }
+    },
+    {
+      "name": "cli-chat-unsubscribe",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "unsubscribe"
+      }
+    },
+    {
+      "name": "cli-chat-content",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "content",
+        "messageId": "public-fixture-message-1",
+        "cursor": "opaque-next-segment"
+      }
+    },
+    {
+      "name": "cli-chat-content-result",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "content-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 1,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false
+      }
+    },
+    {
+      "name": "cli-chat-chunk",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "chunk",
+        "assemblyId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "chunkIndex": 0,
+        "chunkCount": 1,
+        "payload": "{\"type\":\"cli-chat\",\"version\":1,\"sessionId\":\"22222222-2222-4222-8222-222222222222\",\"epoch\":\"33333333-3333-4333-8333-333333333333\",\"requestId\":\"55555555-5555-4555-8555-555555555555\",\"runtimeId\":\"99999999-9999-4999-8999-999999999999\",\"targetId\":\"66666666-6666-4666-8666-666666666666\",\"targetGeneration\":\"77777777-7777-4777-8777-777777777777\",\"op\":\"history-result\",\"snapshotId\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"messages\":[{\"id\":\"public-fixture-message-1\",\"revision\":\"1\",\"role\":\"assistant\",\"text\":\"Public synthetic fixture only: \\\"quoted\\\" \\\\ escaped\\n\",\"segment\":0,\"hasMoreContent\":false,\"state\":\"complete\"}],\"hasMore\":true,\"nextCursor\":\"opaque-older-cursor\",\"tailCursor\":\"opaque-tail-cursor\",\"reset\":false,\"progress\":false}"
+      }
+    },
+    {
+      "name": "cli-chat-error",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "error",
+        "reason": "reset-required"
+      }
+    },
     {
       "name": "cli-list-page-limit",
       "model": "WireCliFrame",
@@ -1291,6 +1670,417 @@
     }
   ],
   "invalid": [
+    {
+      "name": "cli-chat-invalid-warning",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false,
+        "warning": "read-file"
+      }
+    },
+    {
+      "name": "cli-chat-request-warning",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history",
+        "warning": "oversized-record"
+      }
+    },
+    {
+      "name": "cli-chat-content-cursor-without-more",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 0,
+        "hasMoreContent": false,
+        "state": "complete",
+        "contentCursor": "not-valid"
+      }
+    },
+    {
+      "name": "cli-chat-text-over-limit",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "segment": 0,
+        "hasMoreContent": false,
+        "state": "complete"
+      }
+    },
+    {
+      "name": "cli-chat-hidden-role",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "system",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 0,
+        "hasMoreContent": false,
+        "state": "complete"
+      }
+    },
+    {
+      "name": "cli-chat-reasoning-field",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 0,
+        "hasMoreContent": false,
+        "state": "complete",
+        "thinking": "not public"
+      }
+    },
+    {
+      "name": "cli-chat-missing-content-cursor",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 0,
+        "hasMoreContent": true,
+        "state": "complete"
+      }
+    },
+    {
+      "name": "cli-chat-null-timestamp",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": 0,
+        "hasMoreContent": false,
+        "state": "complete",
+        "timestamp": null
+      }
+    },
+    {
+      "name": "cli-chat-invalid-segment",
+      "model": "WireCliChatMessage",
+      "value": {
+        "id": "public-fixture-message-1",
+        "revision": "1",
+        "role": "assistant",
+        "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+        "segment": -1,
+        "hasMoreContent": false,
+        "state": "complete"
+      }
+    },
+    {
+      "name": "cli-chat-forbidden-op",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "subscribe"
+      }
+    },
+    {
+      "name": "cli-chat-tail-missing-cursor",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "tail"
+      }
+    },
+    {
+      "name": "cli-chat-unsubscribe-with-text",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "unsubscribe",
+        "text": "never"
+      }
+    },
+    {
+      "name": "cli-chat-null-cursor",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history",
+        "cursor": null
+      }
+    },
+    {
+      "name": "cli-chat-progress-no-continuation",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": false,
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": true
+      }
+    },
+    {
+      "name": "cli-chat-more-no-continuation",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": true,
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false
+      }
+    },
+    {
+      "name": "cli-chat-multiple-content-segments",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "content-result",
+        "snapshotId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "messages": [
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          },
+          {
+            "id": "public-fixture-message-1",
+            "revision": "1",
+            "role": "assistant",
+            "text": "Public synthetic fixture only: \"quoted\" \\ escaped\n",
+            "segment": 0,
+            "hasMoreContent": false,
+            "state": "complete"
+          }
+        ],
+        "hasMore": true,
+        "nextCursor": "opaque-older-cursor",
+        "tailCursor": "opaque-tail-cursor",
+        "reset": false,
+        "progress": false
+      }
+    },
+    {
+      "name": "cli-chat-chunk-over-count",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "chunk",
+        "assemblyId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "chunkIndex": 0,
+        "chunkCount": 129,
+        "payload": "{}"
+      }
+    },
+    {
+      "name": "cli-chat-chunk-negative-index",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "chunk",
+        "assemblyId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "chunkIndex": -1,
+        "chunkCount": 1,
+        "payload": "{}"
+      }
+    },
+    {
+      "name": "cli-chat-chunk-mixed-fields",
+      "model": "WireCliChatFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "chunk",
+        "assemblyId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "chunkIndex": 0,
+        "chunkCount": 1,
+        "payload": "{}",
+        "messages": []
+      }
+    },
+    {
+      "name": "cli-chat-session-null-version",
+      "model": "WireRemoteSession",
+      "value": {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "hostId": "11111111-1111-4111-8111-111111111111",
+        "scope": "control",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "expiresAt": "2026-11-02T12:00:00Z",
+        "protocolVersion": 2,
+        "purpose": "cli",
+        "cliProtocolVersion": 1,
+        "cliChatProtocolVersion": null
+      }
+    },
+    {
+      "name": "cli-chat-old-cli-frame",
+      "model": "WireCliFrame",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history"
+      }
+    },
+    {
+      "name": "cli-chat-not-signaling",
+      "model": "WireSignal",
+      "value": {
+        "type": "cli-chat",
+        "version": 1,
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "runtimeId": "99999999-9999-4999-8999-999999999999",
+        "targetId": "66666666-6666-4666-8666-666666666666",
+        "targetGeneration": "77777777-7777-4777-8777-777777777777",
+        "op": "history"
+      }
+    },
     {
       "name": "cli-list-page-over-limit",
       "model": "WireCliFrame",

@@ -54,6 +54,42 @@ describe('v2 signaling isolation',()=>{
     Object.assign(f.host.ticket,{platform:'macos',cliProtocolVersion:1});
     return f;
   }
+  it('snapshots chat in ready/session-start only when both endpoints negotiated it',async()=>{
+    const f=cliFixture();
+    Object.assign(f.remote,{cliChatProtocolVersion:1});
+    Object.assign(f.host.ticket,{cliChatProtocolVersion:1});
+    try {
+      await f.internal.registerController(f.controller);
+      const ready=JSON.parse(f.controller.socket.send.mock.calls[0][0]);
+      const start=JSON.parse(f.host.socket.send.mock.calls[0][0]);
+      expect(ready.session).toEqual(start.session);
+      expect(start.session).toMatchObject({cliProtocolVersion:1,cliChatProtocolVersion:1});
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it.each(['old-chat-host','replacement'] as const)('refuses chat controller installation against %s',async(kind)=>{
+    const f=cliFixture();
+    Object.assign(f.remote,{cliChatProtocolVersion:1});
+    if(kind==='replacement') {
+      Object.assign(f.host.ticket,{cliChatProtocolVersion:1});
+      f.internal.devices.set(f.remote.hostId,connection(f.host.ticket));
+    }
+    try {
+      await expect(f.internal.registerController(f.controller)).rejects.toThrow('host endpoint incompatible');
+      expect(f.sessions.installController).not.toHaveBeenCalled();
+    } finally { await f.service.onModuleDestroy(); }
+  });
+  it('does not upgrade existing CLI1 snapshots and never routes chat text over signaling',async()=>{
+    const f=cliFixture();
+    Object.assign(f.host.ticket,{cliChatProtocolVersion:1});
+    try {
+      await f.internal.registerController(f.controller);
+      expect(JSON.parse(f.controller.socket.send.mock.calls[0][0]).session).not.toHaveProperty('cliChatProtocolVersion');
+      f.host.socket.send.mockClear();
+      await f.send(f.controller,{type:'cli-chat',version:1,op:'history',sessionId:f.remote.id,text:'synthetic fixture only'});
+      expect(f.controller.socket.close).toHaveBeenCalledWith(1008,'invalid message type');
+      expect(f.host.socket.send).not.toHaveBeenCalled();
+    } finally { await f.service.onModuleDestroy(); }
+  });
   it('publishes identical CLI session snapshots in controller ready and host session-start',async()=>{
     const f=cliFixture();
     try {

@@ -25,12 +25,14 @@ import { TicketController } from './signaling/ticket.controller';
 import { TicketService } from './signaling/ticket.service';
 import { RuntimeIdentityService } from './runtime/runtime-identity.service';
 import { RuntimeCoordinatorService } from './runtime/runtime-coordinator.service';
+import { CliProfileController } from './cli-profiles/cli-profile.controller';
+import { CliProfileService } from './cli-profiles/cli-profile.service';
 
 @Module({
-  controllers:[HealthController,SessionController,DeviceController,RemoteSessionController,IceController,TicketController],
+  controllers:[HealthController,SessionController,DeviceController,RemoteSessionController,IceController,TicketController,CliProfileController],
   providers:[SyncConfigService,DatabaseService,RedisService,RevocationBusService,RequestSecurityService,
     AuthService,SessionRepository,SessionService,SessionGuard,DeviceRepository,DeviceProofService,ModeService,
     RuntimeIdentityService,RemoteSessionRepository,RemoteSessionService,RuntimeCoordinatorService,
-    IceService,TicketService,DeviceService,SignalingService],
+    IceService,TicketService,DeviceService,SignalingService,CliProfileService],
 })
 export class AppModule {}

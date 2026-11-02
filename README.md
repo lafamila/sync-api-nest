@@ -50,6 +50,8 @@ npm run build:web
 npm run build:all
 npm run contracts:check # all four sibling Sync repos must be present
 npm run test:contracts
+# After main approves the local DB slot; only a fresh sync_test schema/prefix:
+SYNC_CLI_CHAT_DB_SLOT=approved node --env-file-if-exists=.env scripts/test-cli-chat-isolated.mjs
 ```
 
 `npm run test:system` requires an existing `dist/main.js`, `web/dist`, local Chrome, the dedicated `sync_test` database, Redis, and healthy coturn settings in the untracked `.env`. It starts the compiled production entry without DI overrides, but replaces every OIDC endpoint/client value in the child environment with a generated RS256 fixture. It uses a unique account and Redis prefix, deletes only those rows/keys, and never reads real auth accounts or writes the auth database. It also crashes an active API, verifies bounded stale-session recovery and browser reconnection, then verifies graceful SIGTERM session closure and immediate restart. Screenshots and redacted metadata are written to ignored `test/system/artifacts/`.
@@ -58,11 +60,12 @@ npm run test:contracts
 
 ## HTTP contract
 
-Native mobile CLI list/send, authority, additive migration4 and rollout are documented in [CLI sessions](docs/cli-sessions.md). This optional extension does not enable browser/PIN CLI or add a service/env key.
+Native mobile CLI list/send, separately negotiated CLI Chat1, additive migrations4/5 and signed public profiles are documented in [CLI sessions](docs/cli-sessions.md). These optional extensions do not enable browser/PIN CLI or add a service/env key. The isolated chat runner refuses non-loopback/non-`sync_test` targets, installs/migrates only a fresh schema, cleans only that schema and its UUID Redis prefix, and never runs the legacy public-truncate integration suite. Do not run that legacy suite against a shared test schema.
 
 All routes use `/api`. Browser auth uses the HttpOnly `sync_session` cookie and a strict `sync_csrf` double-submit cookie on mutations. Native clients send only their opaque value in `X-Sync-Session`. Device-changing native operations additionally require a one-use P-256 proof.
 
 - `GET /api/health`, `GET /api/config`
+- `GET|HEAD /api/cli-profiles/v1/{manifest.json,manifest.sig,claude-native-v1.json,codex-native-v1.json}` (public signed data only)
 - `POST|GET /api/session/oidc/start`, `GET /api/session/oidc/callback`, `POST /api/session/oidc/complete`
 - `GET /api/session/me`, `POST /api/session/logout`
 - `POST /api/devices/challenge`, `POST|GET /api/devices`, `DELETE /api/devices/:id`

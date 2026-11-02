@@ -43,7 +43,8 @@ Hand-written date/domain adapters may consume DTOs, but guards must consume the
 generated domains or compare their enums against the common fixtures/catalog.
 
 Absent optional response metadata decodes to protocol 1 / empty capabilities;
-absent feature flags are false. Public config is flat, includes the original
+absent feature flags are false/unsupported (`cliChat` remains optional, not
+defaulted to a supported declaration). Public config is flat, includes the original
 product/version/authConfigured/webUrl fields, and uses optional `modeDuration`.
 `defaultModeSeconds=43200` preserves the original 12-hour policy. Absolute mode
 bounds are not the server-configured picker range; always use server modeDuration.
@@ -60,3 +61,39 @@ Proof fixtures intentionally use the publicly known insecure P-256 scalar `d=1`
 and fixed `k=1`. SPKI public key and ASN.1 DER signatures are deterministic test
 vectors only. No real credential/private key is included. Generated proof builders
 only canonicalize existing UTF-8 strings; OS-backed signing remains platform-owned.
+
+## CLI Chat1
+
+`cliChatProtocolVersion:1` is independent of base2/CLI1 and is never an eighth
+capability. `WireDevice` reflects only the currently live ticket declaration;
+`WireRemoteSession` preserves the negotiated immutable snapshot. Old responses
+omit this version and `features.cliChat`; old API requests must omit the new
+version until both CLI feature flags and base2 support are explicitly present.
+
+`WireCliChatFrame` and `WireCliChatMessage` are the exact generated names in all
+languages. Strict variants cover `history`, `tail`, `unsubscribe`, `content`,
+their results, `chunk` and `error`. Page results contain at most20 chronologically
+ordered visible user/assistant messages. Stable IDs/revisions and segmented text
+preserve source identity, not guessed draft/reply reconciliation. Results carry
+independent older/tail cursors, snapshot/reset, resumable scan progress and optional
+`warning: oversized-record | malformed-record` without inventing a visible role.
+Content results contain at most one segment, or no message on warning/reset/
+progress. `hasMore`/`progress` require a continuation cursor. Unsupported roles,
+extra fields, null optionals and cross-op fields fail strict decode.
+
+Each text/chunk is at most8KiB UTF8. Serialized frames remain32KiB; escaping can
+make a structurally valid logical result too large for a frame. Transports MUST
+measure the original serialized bytes before parse, chunk oversized results,
+strictly validate assembled results, and recheck authorization/identity before
+publication. Structural validation does not enforce chunk index/count correlation,
+timeout, cumulative memory, message identity, cursor authority or frame-byte limits.
+Runtime budgets are128 chunks/1MiB per assembly,4MiB concurrent,10 seconds,
+4 pending requests and64KiB channel buffer, with heartbeat/release priority.
+Visible cache ceilings are400 messages/2MiB text; older content stays retrievable.
+Tail is visible-only polling at no faster than1 second, not a new subscription.
+
+`fixtures.json` includes public synthetic request/result/warning/segment/chunk and
+old-consumer rejection vectors. Contract tests compile and execute all fixtures
+through TS, Swift, Kotlin and C#, including round-trip omission of chat optionals.
+Public signed profile assets have a separate native-owned data schema and are not
+wire messages. See [CLI sessions](../docs/cli-sessions.md) for API rollout/security.

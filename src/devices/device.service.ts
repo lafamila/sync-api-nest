@@ -10,7 +10,7 @@ import { ApproveGrantDto, BrowserRecoveryDto, CapabilityUpdateDto, ConnectDevice
 import { DeviceProofService } from './device-proof.service';
 import { DeviceRepository } from './device.repository';
 import { ModeService } from './mode.service';
-import { EndpointFeatures, endpointFeatures, negotiate, requireBoundedHost, requireCliProtocol, requireWebProtocol } from '../common/protocol';
+import { EndpointFeatures, endpointFeatures, negotiate, requireBoundedHost, requireCliProtocol, requireCliChatProtocol, requireWebProtocol, supportsSession } from '../common/protocol';
 import { randomOpaque, sha256 } from '../common/crypto';
 import { WireBrowserActivityState } from '../generated/sync-wire';
 
@@ -91,6 +91,10 @@ export class DeviceService {
 
   async connect(session: AuthSessionContext, hostId: string, input: ConnectDeviceDto, ip: string) {
     const purpose=input.purpose ?? 'screen';
+    const chat=input.cliChatProtocolVersion!==undefined;
+    if(chat && (session.source!=='native' || input.scope!=='control' || input.code!==undefined)) {
+      throw new ForbiddenException('CLI chat requires trusted native control without PIN access');
+    }
     if(purpose==='cli' && (session.source!=='native' || input.scope!=='control')) {
       throw new ForbiddenException('CLI sessions require trusted native control');
     }
@@ -98,10 +102,10 @@ export class DeviceService {
     if(input.rememberDevice) throw new BadRequestException('rememberDevice cannot create trust; approve the controller from the host device');
     const host = await this.devices.findOwned(session.account.id,hostId);
     if (!host) {
-      if(purpose==='cli') throw new ForbiddenException('CLI host is not authorized');
+      if(purpose==='cli' || chat) throw new ForbiddenException('CLI host is not authorized');
       throw new NotFoundException('Host device not found');
     }
-    if(purpose==='cli' && host.platform!=='macos') throw new ForbiddenException('CLI sessions require a Mac host');
+    if((purpose==='cli' || chat) && host.platform!=='macos') throw new ForbiddenException('CLI sessions require a Mac host');
     if (isMobile(host.platform) && input.scope !== 'view') throw new ForbiddenException('Mobile hosts support view-only sessions');
     let mode = await this.modes.require(session.account.id,hostId);
     let controllerDeviceId: string | undefined;
@@ -116,12 +120,12 @@ export class DeviceService {
       mode = await this.modes.verifyPin(session.account,hostId,input.code,ip);
     } else {
       if (!input.controllerDeviceId || !input.challengeId || !input.signature) {
-        if(purpose==='cli') throw new ForbiddenException('CLI sessions require native device proof');
+        if(purpose==='cli' || chat) throw new ForbiddenException('CLI sessions require native device proof');
         throw new BadRequestException('Native connection requires device proof');
       }
       controllerDeviceId = input.controllerDeviceId;
       if (controllerDeviceId === hostId) {
-        if(purpose==='cli') throw new ForbiddenException('CLI controller must differ from the host');
+        if(purpose==='cli' || chat) throw new ForbiddenException('CLI controller must differ from the host');
         throw new BadRequestException('Host and controller devices must differ');
       }
       try {
@@ -129,14 +133,14 @@ export class DeviceService {
           deviceId:controllerDeviceId, challengeId:input.challengeId, signature:input.signature,
         });
       } catch(error) {
-        if(purpose==='cli' && error instanceof NotFoundException) throw new ForbiddenException('CLI controller is not authorized');
+        if((purpose==='cli' || chat) && error instanceof NotFoundException) throw new ForbiddenException('CLI controller is not authorized');
         throw error;
       }
       const grant = await this.devices.findGrant(session.account.id,hostId,controllerDeviceId);
       const grantAllows = grant && (grant.scope === 'control' || input.scope === 'view');
       const requiresPin = !grantAllows;
       if(grantAllows) authorizationGrantId=grant.id;
-      if(purpose==='cli' && (!grant || grant.scope!=='control')) throw new ForbiddenException('CLI sessions require a control grant');
+      if((purpose==='cli' || chat) && (!grant || grant.scope!=='control')) throw new ForbiddenException('CLI sessions require a control grant');
       if (requiresPin) {
         if(isMobile(host.platform) || !mode.allowBrowser) {
           throw new ForbiddenException('Untrusted temporary connections are disabled for this host');
@@ -149,7 +153,8 @@ export class DeviceService {
     if (!endpoint) throw new ForbiddenException('Host device is offline');
     const features=negotiate(endpoint,endpointFeatures(input));
     const cliEligible=session.source==='native' && host.platform==='macos' && input.scope==='control' && Boolean(authorizationGrantId);
-    if(!cliEligible) delete features.cliProtocolVersion;
+    if(!cliEligible) { delete features.cliProtocolVersion; delete features.cliChatProtocolVersion; }
+    if(chat) requireCliChatProtocol(features);
     if(purpose==='cli') requireCliProtocol(features,endpoint,this.config.config.requireBoundedHosts);
     else requireBoundedHost(endpoint,this.config.config.requireBoundedHosts);
     if(purpose==='cli') features.capabilities=[];
@@ -163,7 +168,7 @@ export class DeviceService {
     try {
       const currentMode=await this.modes.require(session.account.id,hostId);
       const currentEndpoint=await this.tickets.activeEndpoint(hostId);
-      if(currentMode.epoch!==mode.epoch || currentEndpoint?.id!==endpoint.id) {
+      if(currentMode.epoch!==mode.epoch || currentEndpoint?.id!==endpoint.id || !supportsSession(currentEndpoint,features)) {
         throw new ForbiddenException('Remote mode changed during connection authorization');
       }
       const ticket = await this.tickets.issue({ role:'controller', ownerAccountId:session.account.id,
@@ -227,13 +232,15 @@ export class DeviceService {
 export function presentSession(session: import('../sessions/remote-session.repository').RemoteSession) {
   return { id:session.id,hostId:session.hostId,controllerId:session.controllerId,scope:session.scope,epoch:session.epoch,expiresAt:session.expiresAt,
     protocolVersion:session.protocolVersion,capabilities:session.capabilities,purpose:session.purpose ?? 'screen',
-    ...(session.cliProtocolVersion===undefined?{}:{cliProtocolVersion:session.cliProtocolVersion}) };
+    ...(session.cliProtocolVersion===undefined?{}:{cliProtocolVersion:session.cliProtocolVersion}),
+    ...(session.cliChatProtocolVersion===undefined?{}:{cliChatProtocolVersion:session.cliChatProtocolVersion}) };
 }
 
 export function presentDevice(device:import('./device.repository').Device,endpoint?:EndpointFeatures) {
   return {id:device.id,name:device.name,platform:device.platform,protocolVersion:device.protocolVersion,
     capabilities:device.capabilities,...(device.clientVersion?{clientVersion:device.clientVersion}:{}),
-    ...(endpoint?.cliProtocolVersion===undefined?{}:{cliProtocolVersion:endpoint.cliProtocolVersion})};
+    ...(endpoint?.cliProtocolVersion===undefined?{}:{cliProtocolVersion:endpoint.cliProtocolVersion}),
+    ...(endpoint?.cliChatProtocolVersion===undefined?{}:{cliChatProtocolVersion:endpoint.cliChatProtocolVersion})};
 }
 
 function isMobile(platform:string) { return platform==='ios' || platform==='android'; }

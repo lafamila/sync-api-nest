@@ -132,4 +132,16 @@ do $$ begin
     insert into sync_schema_migrations(version) values(4);
   end if;
 end $$;
+
+do $$ begin
+  if not exists(select 1 from sync_schema_migrations where version=5) then
+    alter table sync_remote_sessions add column cli_chat_protocol_version integer;
+    alter table sync_remote_sessions add constraint sync_cli_chat_session_consistency check(
+      cli_chat_protocol_version is null or (cli_chat_protocol_version=1 and cli_protocol_version is not null
+        and cli_protocol_version=1 and protocol_version>=2 and controller_kind='native' and scope='control'
+        and controller_device_id is not null and controller_device_id<>host_device_id
+        and authorization_grant_id is not null and host_endpoint_id is not null));
+    insert into sync_schema_migrations(version) values(5);
+  end if;
+end $$;
 `;

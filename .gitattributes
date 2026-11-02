@@ -1,0 +1,2 @@
+/assets/cli-profiles/v1/*.json -text
+/assets/cli-profiles/v1/*.sig -text -diff

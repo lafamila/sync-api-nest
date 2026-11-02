@@ -17,6 +17,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --fetch-retries=5 && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web/dist
+COPY assets ./assets
 USER node
 EXPOSE 3053
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

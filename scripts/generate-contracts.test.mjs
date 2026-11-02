@@ -275,6 +275,81 @@ test('fixture directions, display epochs and Unicode edits express runtime bound
   }
 });
 
+test('chat negotiation remains separately optional and strict op fields reject cross-variant data',()=>{
+  assert.equal(wire.decodeWire('WireFeatureFlags',{}).cliChat,undefined);
+  assert.equal(wire.decodeWire('WirePublicConfig',{features:{cliSessions:true}}).features.cliChat,undefined);
+  for(const model of ['WireDevice','WireRemoteSession']) {
+    const legacy=fixtures.valid.find(f=>f.model===model && f.name.startsWith('legacy-')).value;
+    assert.equal(wire.decodeWire(model,legacy).cliChatProtocolVersion,undefined);
+    assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(wire.decodeWire(model,legacy))),'cliChatProtocolVersion'),false);
+  }
+  const frameFields=Object.keys(contract.$defs.WireCliChatFrame.properties);
+  for(const fixture of fixtures.valid.filter(f=>f.model==='WireCliChatFrame')) {
+    const value=fixture.value;
+    for(const key of contract.$defs.WireCliChatFrame.required) {
+      const bad={...value}; delete bad[key];
+      assert.equal(wire.validateWire('WireCliChatFrame',bad),false,`${fixture.name} missing ${key}`);
+    }
+    for(const key of frameFields) {
+      if(Object.hasOwn(value,key)) continue;
+      assert.equal(wire.validateWire('WireCliChatFrame',{...value,[key]:null}),false,`${fixture.name} null ${key}`);
+    }
+    assert.equal(wire.validateWire('WireCliChatFrame',{...value,extra:true}),false);
+    assert.equal(wire.validateWire('WireCliFrame',value),false,'old CLI1 rejects chat frames');
+    assert.equal(wire.validateWire('WireSignal',value),false,'HTTP/WSS must not accept chat');
+  }
+  assert.deepEqual(contract.$defs.WireCliReceipt.properties.state.enum,['received','queued','rejected','unknown']);
+  assert.equal(wire.SYNC_PROTOCOL_VERSION,2);
+  assert.equal(wire.SYNC_CAPABILITIES.length,7);
+});
+
+test('chat validators reject own prototype-named additional properties',()=>{
+  for(const fixture of fixtures.valid.filter(f=>['WireCliChatMessage','WireCliChatFrame'].includes(f.model))) {
+    for(const key of ['__proto__','constructor','toString']) {
+      const value=JSON.parse(JSON.stringify({...fixture.value,[key]:true}));
+      const name=`${fixture.name} forbids ${key}`;
+      assert.equal(Object.hasOwn(value,key),true,name);
+      assert.equal(validateValue(contract,fixture.model,value),false,name);
+      assert.equal(wire.validateWire(fixture.model,value),false,name);
+      assert.throws(()=>wire.decodeWire(fixture.model,value),/Invalid/,name);
+    }
+  }
+});
+
+test('chat pages, segments, warnings, chunk bytes and escaped frame budgets have exact boundaries',()=>{
+  const page=fixtures.valid.find(f=>f.name==='cli-chat-history-result').value;
+  const message=fixtures.valid.find(f=>f.name==='cli-chat-message').value;
+  assert.equal(wire.validateWire('WireCliChatFrame',{...page,messages:Array(20).fill(message)}),true);
+  assert.equal(wire.validateWire('WireCliChatFrame',{...page,messages:Array(21).fill(message)}),false);
+  for(const text of ['x'.repeat(8192),'\u{1f600}'.repeat(2048),'\n'.repeat(8192)]) {
+    assert.equal(wire.validateWire('WireCliChatMessage',{...message,text}),true);
+    assert.equal(wire.validateWire('WireCliChatMessage',{...message,text:text+'x'}),false);
+  }
+  const content=fixtures.valid.find(f=>f.name==='cli-chat-content-result').value;
+  assert.equal(wire.validateWire('WireCliChatFrame',{...content,messages:[message,message]}),false);
+  const chunk=fixtures.valid.find(f=>f.name==='cli-chat-chunk').value;
+  for(const [chunkCount,valid] of [[0,false],[1,true],[128,true],[129,false]]) {
+    assert.equal(wire.validateWire('WireCliChatFrame',{...chunk,chunkCount}),valid);
+  }
+  for(const [chunkIndex,valid] of [[-1,false],[0,true],[127,true],[128,false]]) {
+    assert.equal(wire.validateWire('WireCliChatFrame',{...chunk,chunkIndex}),valid);
+  }
+  for(const cursor of ['x'.repeat(2048),'\u{1f600}'.repeat(2048)]) {
+    assert.equal(wire.validateWire('WireCliChatFrame',{...page,nextCursor:cursor}),true);
+    assert.equal(wire.validateWire('WireCliChatFrame',{...page,nextCursor:cursor+'x'}),false);
+  }
+  assert.equal(wire.validateWire('WireCliChatFrame',{...page,messages:[],hasMore:false,progress:true,nextCursor:undefined}),false);
+  for(const warning of ['oversized-record','malformed-record']) {
+    assert.equal(wire.validateWire('WireCliChatFrame',{...page,messages:[],warning}),true);
+  }
+  const escaped={...page,messages:Array(20).fill({...message,text:'\u0000'.repeat(8192)})};
+  assert.equal(wire.validateWire('WireCliChatFrame',escaped),true,'logical result is chunked by transport');
+  assert.ok(Buffer.byteLength(JSON.stringify(escaped))>wire.SYNC_LIMITS.maxCliFrameBytes);
+  assert.equal(wire.SYNC_LIMITS.maxCliFrameBytes,32768);
+  assert.equal(wire.SYNC_LIMITS.maxCliBufferedBytes,65536);
+  assert.equal(wire.SYNC_LIMITS.maxCliPendingRequests,4);
+});
+
 test('generated TS passes actual strict compiler (including literal-union arrays)', () => {
   execFileSync(process.execPath,[require.resolve('typescript/bin/tsc'),'--noEmit','--strict','--skipLibCheck','--target','ES2022','--moduleResolution','node',resolve(api,'src/generated/sync-wire.ts')],{ cwd:api,stdio:'pipe' });
 });
@@ -326,6 +401,14 @@ for example in examples where (example["model"] as! String).hasPrefix("WireCli")
     case "WireCliFrame":
         let model = try SyncContract.decode(WireCliFrame.self,from:data)
         let roundTrip = try SyncContract.decode(WireCliFrame.self,from:JSONEncoder().encode(model))
+        precondition(roundTrip == model)
+    case "WireCliChatMessage":
+        let model = try SyncContract.decode(WireCliChatMessage.self,from:data)
+        let roundTrip = try SyncContract.decode(WireCliChatMessage.self,from:JSONEncoder().encode(model))
+        precondition(roundTrip == model)
+    case "WireCliChatFrame":
+        let model = try SyncContract.decode(WireCliChatFrame.self,from:data)
+        let roundTrip = try SyncContract.decode(WireCliChatFrame.self,from:JSONEncoder().encode(model))
         precondition(roundTrip == model)
     default: fatalError("unexpected CLI fixture")
     }
@@ -410,6 +493,8 @@ static class Program {
                 case "WireCliFrame": RoundTrip<WireCliFrame>(value); break;
                 case "WireCliReceipt": RoundTrip<WireCliReceipt>(value); break;
                 case "WireCliSession": RoundTrip<WireCliSession>(value); break;
+                case "WireCliChatFrame": RoundTrip<WireCliChatFrame>(value); break;
+                case "WireCliChatMessage": RoundTrip<WireCliChatMessage>(value); break;
             }
         }
         var config = SyncContract.Deserialize<WirePublicConfig>("{}");
@@ -476,6 +561,8 @@ fun main(args: Array<String>) {
                 "WireCliFrame" -> check(WireCliFrame.fromJson(value).type == "cli")
                 "WireCliReceipt" -> check(WireCliReceipt.fromJson(value).updatedAt.contains("T"))
                 "WireCliSession" -> check(WireCliSession.fromJson(value).id == value.getString("id"))
+                "WireCliChatFrame" -> check(WireCliChatFrame.fromJson(value).type == "cli-chat")
+                "WireCliChatMessage" -> check(WireCliChatMessage.fromJson(value).id == value.getString("id"))
             }
         }
     }

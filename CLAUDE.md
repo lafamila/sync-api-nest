@@ -15,6 +15,8 @@ Root canonical plan: `../.idea/SYNC_REMOTE_ACCESS_PLAN.md`. 세부 계약 변경
 
 CLI1 확장은 `docs/cli-sessions.md`와 root `.docs/SYNC_CLI_PROTOCOL.md`를 따른다. 기존 protocol2/7 capabilities는 유지하고 schema/generator/모든 언어 출력을 함께 갱신한다. live native proof+same-owner control grant+Mac mode만 허용하며 PIN/browser/view는 금지한다. CLI 본문은 DataChannel 전용이고 HTTP/WSS/DB/log로 보내지 않는다. migration4는 additive이며 실제 운영 적용은 사용자 배포 절차를 따른다. queued는 처리 완료가 아니고 unknown은 자동 재발송하지 않는다.
 
+chat1은 fresh ticket/connect에서만 별도로 협상하고 session snapshot을 사후 승격하지 않는다. migration5는 nullable metadata만 추가한다. 대화 본문은 peer 전용이며 서버에는 transcript 테이블/endpoint를 만들지 않는다. `/api/cli-profiles/v1/`는 고정된 공개 서명 파일4개만 제공하며 private signer/key는 서버에 두지 않는다. DB 회귀는 전용 sync_test의 고유 schema/Redis prefix만 사용하고 public schema truncate를 금지한다.
+
 API typecheck/unit/integration/security tests, web build/e2e, env 비밀 검증 및 README 운영 명령. 로그에 PIN/토큰/키보드 입력을 저장하지 않는다. auth onboarding 승인 전 상태는 unconfigured로 표시하며 인증을 우회하지 않는다.
 
 웹 입력은 Swift 계약과 함께 검토한다. 스크롤 dx/dy는 -100...100이며, Command/Control/Option/Shift는 지원되는 key 이벤트의 modifiers로 전달한다. 네이티브가 모르는 MetaLeft 등의 독립 key 이벤트나 조합키 대신 일반 text를 보내지 않는다. `web/tests/sync.spec.ts`에 실제 채널 회귀 검증이 있다.

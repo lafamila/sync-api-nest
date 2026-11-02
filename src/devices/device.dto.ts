@@ -89,6 +89,11 @@ export class ApproveGrantDto extends DeviceProofDto {
 
 export class ConnectDeviceDto extends EndpointMetadataDto {
   @ValidateIf((_value, value) => value !== undefined)
+  @IsInt()
+  @IsIn([SYNC_LIMITS.cliChatProtocolVersion])
+  cliChatProtocolVersion?: number;
+
+  @ValidateIf((_value, value) => value !== undefined)
   @IsIn(['screen', 'cli'])
   purpose?: 'screen' | 'cli';
 
@@ -137,6 +142,11 @@ export class CapabilityUpdateDto extends DeviceMetadataDto {
 }
 
 export class DeviceTicketDto extends EndpointMetadataDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsInt()
+  @IsIn([SYNC_LIMITS.cliChatProtocolVersion])
+  cliChatProtocolVersion?: number;
+
   @ValidateIf((_value, value) => value !== undefined)
   @IsInt()
   @IsIn([SYNC_LIMITS.cliProtocolVersion])

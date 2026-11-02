@@ -8,7 +8,7 @@ interface SessionRow {
   controller_kind: 'browser' | 'native'; scope: 'view' | 'control'; mode_epoch: string; auth_session_id: string;
   runtime_namespace:string; signaling_instance_id:string;
   protocol_version:number; capabilities:string[]; host_endpoint_id:string|null;
-  purpose:'screen'|'cli'; cli_protocol_version:number|null;
+  purpose:'screen'|'cli'; cli_protocol_version:number|null; cli_chat_protocol_version:number|null;
   activity_token_hash:string|null; last_activity_at:Date|null; idle_deadline:Date|null; recovery_consumed:boolean;
   authorization_grant_id:string|null; connection_deadline:Date|null; connected_at:Date|null;
   created_at: Date; expires_at: Date; ended_at: Date | null; end_reason: string | null;
@@ -20,7 +20,7 @@ export interface RemoteSession {
   authSessionId: string; createdAt: string; expiresAt: string; endedAt: string | null; endReason: string | null;
   runtimeNamespace:string; signalingInstanceId:string;
   protocolVersion:number; capabilities:string[]; hostEndpointId:string|null;
-  purpose?:'screen'|'cli'; cliProtocolVersion?:number;
+  purpose?:'screen'|'cli'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
   lastActivityAt:string|null; idleDeadline:string|null;
   authorizationGrantId?:string|null; connectionDeadline?:string|null; connectedAt?:string|null;
 }
@@ -31,7 +31,7 @@ export interface CreateSessionInput {
   runtimeNamespace:string; signalingInstanceId:string; protocolVersion?:number; capabilities?:string[];
   hostEndpointId?:string; activityTokenHash?:string; idleTimeoutSeconds?:number;
   authorizationGrantId?:string; connectionTimeoutSeconds?:number;
-  purpose?:'screen'|'cli'; cliProtocolVersion?:number;
+  purpose?:'screen'|'cli'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
 }
 
 const RECOVERABLE_REASONS = ['controller_disconnected','device_disconnected','server_shutdown','server_restarted'];
@@ -49,24 +49,25 @@ export class RemoteSessionRepository {
     const id = randomUUID();
     const result = await query<SessionRow>(
       `insert into sync_remote_sessions(id,owner_account_id,host_device_id,controller_device_id,controller_kind,scope,mode_epoch,auth_session_id,expires_at,runtime_namespace,signaling_instance_id,
-       protocol_version,capabilities,host_endpoint_id,activity_token_hash,last_activity_at,idle_deadline,authorization_grant_id,connection_deadline,purpose,cli_protocol_version)
+       protocol_version,capabilities,host_endpoint_id,activity_token_hash,last_activity_at,idle_deadline,authorization_grant_id,connection_deadline,purpose,cli_protocol_version,cli_chat_protocol_version)
        select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,
          case when $5='browser' then coalesce($16::timestamptz,clock_timestamp()) end,
          case when $5='browser' then coalesce($17::timestamptz,least($9,clock_timestamp()+($18 * interval '1 second'))) end,
-         $19,case when $20::integer is not null then least($9,clock_timestamp()+($20 * interval '1 second')) end,$21,$22
+         $19,case when $20::integer is not null then least($9,clock_timestamp()+($20 * interval '1 second')) end,$21,$22,$23
        where exists(select 1 from sync_auth_sessions where id=$8 and expires_at>clock_timestamp()) returning *`,
       [id,input.ownerAccountId,input.hostId,input.controllerDeviceId ?? null,input.controllerKind,input.scope,input.epoch,input.authSessionId,input.expiresAt,
        input.runtimeNamespace,input.signalingInstanceId,input.protocolVersion ?? 1,JSON.stringify(input.capabilities ?? []),
        input.hostEndpointId ?? null,input.activityTokenHash ?? null,continuity?.last_activity_at ?? null,
        continuity?.idle_deadline ?? null,input.idleTimeoutSeconds ?? 900,input.authorizationGrantId ?? null,input.connectionTimeoutSeconds ?? null,
-       input.purpose ?? 'screen',input.cliProtocolVersion ?? null],
+       input.purpose ?? 'screen',input.cliProtocolVersion ?? null,input.cliChatProtocolVersion ?? null],
     );
     if(!result.rows[0]) throw new ForbiddenException('Local authentication session expired');
     return mapSession(result.rows[0]);
   }
 
-  private async lockAuthorization(query:Query,input:Pick<CreateSessionInput,'ownerAccountId'|'authSessionId'|'controllerKind'|'hostId'|'controllerDeviceId'|'authorizationGrantId'|'scope'|'purpose'|'cliProtocolVersion'|'protocolVersion'|'hostEndpointId'>):Promise<void> {
-    const cli=input.cliProtocolVersion!==undefined || input.purpose==='cli';
+  private async lockAuthorization(query:Query,input:Pick<CreateSessionInput,'ownerAccountId'|'authSessionId'|'controllerKind'|'hostId'|'controllerDeviceId'|'authorizationGrantId'|'scope'|'purpose'|'cliProtocolVersion'|'cliChatProtocolVersion'|'protocolVersion'|'hostEndpointId'>):Promise<void> {
+    if(input.cliChatProtocolVersion!==undefined && input.cliChatProtocolVersion!==1) throw new ForbiddenException('Unsupported CLI chat protocol');
+    const cli=input.cliProtocolVersion!==undefined || input.purpose==='cli' || input.cliChatProtocolVersion!==undefined;
     if(cli && (input.cliProtocolVersion!==1 || (input.protocolVersion ?? 1)<2 || input.controllerKind!=='native' ||
       input.scope!=='control' || !input.controllerDeviceId || input.controllerDeviceId===input.hostId ||
       !input.authorizationGrantId || !input.hostEndpointId)) throw new ForbiddenException('CLI sessions require trusted native control');
@@ -101,6 +102,7 @@ export class RemoteSessionRepository {
         authSessionId:snapshot.authSessionId,controllerKind:snapshot.controllerKind,
         controllerDeviceId:snapshot.controllerDeviceId ?? undefined,scope:snapshot.scope,
         authorizationGrantId:snapshot.authorizationGrantId ?? undefined,purpose:snapshot.purpose,cliProtocolVersion:snapshot.cliProtocolVersion,
+        cliChatProtocolVersion:snapshot.cliChatProtocolVersion,
         protocolVersion:snapshot.protocolVersion,hostEndpointId:snapshot.hostEndpointId ?? undefined});
       await query(`select id from sync_remote_sessions where id=$1 for update`,[snapshot.id]);
       // Time is evaluated after the row lock, so a stale discovery snapshot cannot claim a reservation.
@@ -108,9 +110,10 @@ export class RemoteSessionRepository {
         where id=$1 and owner_account_id=$2 and auth_session_id=$3 and ${ACTIVE}
         and (cli_protocol_version is null or (cli_protocol_version=$4 and purpose=$5
           and authorization_grant_id=$6 and host_endpoint_id=$7))
+        and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9
         and exists(select 1 from sync_auth_sessions where id=$3 and expires_at>clock_timestamp()) returning *`,
         [snapshot.id,snapshot.ownerAccountId,snapshot.authSessionId,snapshot.cliProtocolVersion ?? null,snapshot.purpose ?? 'screen',
-         snapshot.authorizationGrantId ?? null,snapshot.hostEndpointId]);
+         snapshot.authorizationGrantId ?? null,snapshot.hostEndpointId,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch]);
       const row=result.rows[0];
       if(!row || !install(mapSession(row))) throw new ForbiddenException('Session closed during controller installation');
       return mapSession(row);
@@ -119,12 +122,12 @@ export class RemoteSessionRepository {
 
   async bindHostEndpoint(snapshot:RemoteSession,endpointId:string,isCurrent:()=>boolean):Promise<RemoteSession|undefined> {
     return this.db.transaction(async(query)=>{
-      if(snapshot.cliProtocolVersion!==undefined || snapshot.purpose==='cli') {
+      if(snapshot.cliProtocolVersion!==undefined || snapshot.purpose==='cli' || snapshot.cliChatProtocolVersion!==undefined) {
         await this.lockAuthorization(query,{ownerAccountId:snapshot.ownerAccountId,hostId:snapshot.hostId,
           authSessionId:snapshot.authSessionId,controllerKind:snapshot.controllerKind,
           controllerDeviceId:snapshot.controllerDeviceId ?? undefined,scope:snapshot.scope,
           authorizationGrantId:snapshot.authorizationGrantId ?? undefined,purpose:snapshot.purpose,
-          cliProtocolVersion:snapshot.cliProtocolVersion,protocolVersion:snapshot.protocolVersion,
+          cliProtocolVersion:snapshot.cliProtocolVersion,cliChatProtocolVersion:snapshot.cliChatProtocolVersion,protocolVersion:snapshot.protocolVersion,
           hostEndpointId:snapshot.hostEndpointId ?? undefined});
       }
       await query(`select id from sync_remote_sessions where id=$1 for update`,[snapshot.id]);
@@ -133,9 +136,10 @@ export class RemoteSessionRepository {
       const result=await query<SessionRow>(`update sync_remote_sessions set host_endpoint_id=$2
         where id=$1 and owner_account_id=$3 and host_device_id=$4 and ${ACTIVE}
         and (cli_protocol_version is null or (host_endpoint_id=$2 and cli_protocol_version=$5
-          and purpose=$6 and authorization_grant_id=$7)) returning *`,
+          and purpose=$6 and authorization_grant_id=$7))
+        and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9 returning *`,
         [snapshot.id,endpointId,snapshot.ownerAccountId,snapshot.hostId,snapshot.cliProtocolVersion ?? null,
-         snapshot.purpose ?? 'screen',snapshot.authorizationGrantId ?? null]);
+         snapshot.purpose ?? 'screen',snapshot.authorizationGrantId ?? null,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch]);
       return result.rows[0] ? mapSession(result.rows[0]) : undefined;
     });
   }
@@ -228,6 +232,7 @@ function mapSession(row: SessionRow): RemoteSession {
     runtimeNamespace:row.runtime_namespace,signalingInstanceId:row.signaling_instance_id,
     protocolVersion:row.protocol_version ?? 1,capabilities:row.capabilities ?? [],hostEndpointId:row.host_endpoint_id ?? null,
     purpose:row.purpose ?? 'screen',...(row.cli_protocol_version==null?{}:{cliProtocolVersion:row.cli_protocol_version}),
+    ...(row.cli_chat_protocol_version==null?{}:{cliChatProtocolVersion:row.cli_chat_protocol_version}),
     lastActivityAt:row.last_activity_at?.toISOString() ?? null,idleDeadline:row.idle_deadline?.toISOString() ?? null,
     authorizationGrantId:row.authorization_grant_id ?? null,connectionDeadline:row.connection_deadline?.toISOString() ?? null,
     connectedAt:row.connected_at?.toISOString() ?? null };
