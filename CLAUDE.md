@@ -30,3 +30,9 @@ TURN의 base/TLS Compose는 Synology `docker-compose` v1 호환을 위해 양쪽
 Docker의 backend/web/runtime `npm ci`는 유한한 fetch 재시도로 일시적 네트워크 오류를 보완하며 lockfile·TLS·실패 전파는 유지한다. NAS의 지속적인 `ETIMEDOUT`은 해당 Docker 네트워크의 registry 연결을 별도 확인하며, registry/TLS 우회나 기존 서비스 종료로 해결하지 않는다. Workspace 배포 스크립트의 변경은 API checkout과 별도로 NAS에 반영한다.
 
 고정 coturn4.18 설정은 `cli=0`·`dtls=0`과 기본 TLS최소1.2를 유지하고 제거된 구형 옵션을 생성하지 않는다. TURN은 UID/GID0:0 + cap_dropALL이므로 전용 인증서/키 복사본의 root 소유·mode600을 유지한다. TLS 실패에서 파일 존재와 실제 프로세스의 읽기 가능 여부를 구분하며, chmod644/777·capability 추가·인증서 검증 해제로 우회하지 않는다. 생성기 수정 후 기존 conf 재생성과 TURN 재생성이 별도로 필요하다.
+
+## Build Artifact Retention
+
+워크스페이스 루트 [CLAUDE.md 원칙 25](../CLAUDE.md)와 로컬 [.build-artifacts.json](./.build-artifacts.json)을 빌드 산출물 목록의 canonical 기준으로 삼는다. 공용 `$build-artifacts list|build|clean`을 사용하며 기본 동작은 `list`이고, 파일 수정 시각만으로 빌드 성공을 추정하지 않는다.
+
+직전 성공 빌드는 다음 빌드와 산출물 검증이 모두 성공할 때까지 보존하고, 성공 후 같은 그룹에서 대체된 직전 산출물만 삭제한다. 실패하면 직전 성공본을 복구하며 플랫폼·아키텍처·dev/prod·flavor·배포 형식은 서로 보존한다. 소스·assets·DB·사용자 데이터·비밀·dependencies·cache와 실행 중인 runtime 또는 설치된 앱 복사본은 정리 대상이 아니다.

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "api-dist",
+      "description": "TypeScript로 컴파일한 Sync API 서버 출력",
+      "strategy": "in_place",
+      "paths": ["dist/"]
+    },
+    {
+      "id": "web-dist",
+      "description": "Vite로 빌드한 원격 제어 웹 SPA 출력",
+      "strategy": "in_place",
+      "paths": ["web/dist/"]
+    }
+  ]
+}

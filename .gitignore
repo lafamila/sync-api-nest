@@ -10,3 +10,5 @@ web/dist/
 deploy/.state/
 test/system/artifacts/
 .omx/
+.build-artifacts-state.json
+.build-artifacts-staging/
