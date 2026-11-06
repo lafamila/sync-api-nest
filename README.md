@@ -60,6 +60,19 @@ SYNC_CLI_CHAT_DB_SLOT=approved node --env-file-if-exists=.env scripts/test-cli-c
 
 ## HTTP contract
 
+Trusted native code lookup is documented in [Trusted Access Code](docs/access-code.md).
+The additive `access-code` capability/purpose uses data-only encrypted peer frames,
+not a code-retrieval HTTP/WSS endpoint. Migration6 preserves ordinary host session
+exclusivity while allowing isolated code sessions to coexist; it is not yet applied
+to dev/production. The browser SPA cannot request this native-only authority.
+
+New native clients send `X-Sync-Extensions: access-code` on all HTTP requests,
+including config probes. Without that exact compatibility opt-in, config/devices
+retain the legacy seven-capability projection and session lists omit code-purpose
+rows. Opted responses expose the new catalog/rows. These GETs use
+`Vary: X-Sync-Extensions` and `Cache-Control: no-store`. The header never grants trust or
+changes registration/ticket/connect authorization; old servers ignore it.
+
 Native mobile CLI list/send, separately negotiated CLI Chat1, additive migrations4/5 and signed public profiles are documented in [CLI sessions](docs/cli-sessions.md). These optional extensions do not enable browser/PIN CLI or add a service/env key. The isolated chat runner refuses non-loopback/non-`sync_test` targets, installs/migrates only a fresh schema, cleans only that schema and its UUID Redis prefix, and never runs the legacy public-truncate integration suite. Do not run that legacy suite against a shared test schema.
 
 All routes use `/api`. Browser auth uses the HttpOnly `sync_session` cookie and a strict `sync_csrf` double-submit cookie on mutations. Native clients send only their opaque value in `X-Sync-Session`. Device-changing native operations additionally require a one-use P-256 proof.

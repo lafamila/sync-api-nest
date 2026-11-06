@@ -111,7 +111,7 @@ integration('CLI chat isolated sync_test schema and Redis prefix',()=>{
     expect(names.rows.map(row=>row.tablename)).toEqual(['sync_access_events','sync_auth_sessions','sync_device_grants',
       'sync_devices','sync_remote_sessions','sync_schema_migrations']);
     expect((await db.query('show search_path')).rows[0]!.search_path).toBe(schema);
-    expect((await db.query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(5);
+    expect((await db.query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(6);
   });
 
   it('applies migration5 twice to populated v4 without changing rows or unique-host policy',async()=>{
@@ -137,7 +137,8 @@ integration('CLI chat isolated sync_test schema and Redis prefix',()=>{
         values($1,'owner',$2,'browser','view',$3,$4,now()+interval '1 hour')`,[screen,secondHost,epoch,auth]);
       const before=await query('select * from sync_remote_sessions order by id');
       const indexBefore=await query(`select indexdef from pg_indexes where schemaname=$1 and indexname='sync_one_controller_per_host_idx'`,[migration]);
-      await query(SCHEMA_SQL); await query(SCHEMA_SQL);
+      const migration5=SCHEMA_SQL.split('do $$ begin').slice(0,5).join('do $$ begin');
+      await query(migration5); await query(migration5);
       const after=await query('select * from sync_remote_sessions order by id');
       expect(after.rows.map(({cli_chat_protocol_version,...row})=>{ expect(cli_chat_protocol_version).toBeNull(); return row; })).toEqual(before.rows);
       expect((await query(`select indexdef from pg_indexes where schemaname=$1 and indexname='sync_one_controller_per_host_idx'`,[migration])).rows).toEqual(indexBefore.rows);

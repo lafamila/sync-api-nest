@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
+import { setExtensionProjectionHeaders, supportsAccessCodeProjection } from '../common/http-extensions';
 import { AuthenticatedRequest } from '../common/request';
 import { RequestSecurityService } from '../common/request-security.service';
 import { SessionGuard } from '../auth/session.guard';
@@ -23,7 +25,10 @@ export class DeviceController {
     return this.service.register(req.syncSession,input).then((device) => ({ device:publicDevice(device) }));
   }
   @Get()
-  list(@Req() req: AuthenticatedRequest) { return this.service.list(req.syncSession); }
+  list(@Req() req: AuthenticatedRequest,@Res({passthrough:true}) response?:Response) {
+    setExtensionProjectionHeaders(response);
+    return this.service.list(req.syncSession,supportsAccessCodeProjection(req));
+  }
   @Post(':id/capabilities')
   capabilities(@Req() req: AuthenticatedRequest,@Param('id') id: string,@Body() input: CapabilityUpdateDto) {
     this.security.assertMutation(req,req.syncSession); this.security.assertNativeSession(req.syncSession);

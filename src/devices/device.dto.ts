@@ -94,8 +94,8 @@ export class ConnectDeviceDto extends EndpointMetadataDto {
   cliChatProtocolVersion?: number;
 
   @ValidateIf((_value, value) => value !== undefined)
-  @IsIn(['screen', 'cli'])
-  purpose?: 'screen' | 'cli';
+  @IsIn(['screen', 'cli', 'access-code'])
+  purpose?: 'screen' | 'cli' | 'access-code';
 
   @ValidateIf((_value, value) => value !== undefined)
   @IsInt()

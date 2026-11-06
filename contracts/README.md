@@ -62,9 +62,24 @@ and fixed `k=1`. SPKI public key and ASN.1 DER signatures are deterministic test
 vectors only. No real credential/private key is included. Generated proof builders
 only canonicalize existing UTF-8 strings; OS-backed signing remains platform-owned.
 
+## Trusted Access Code
+
+The eighth capability is `access-code`, not CLI chat. The separate
+`WireAccessCodeFrame` strict request/result/error variants, data-only authority,
+2048-byte limit and10-second request timeout are documented in
+[Trusted Access Code](../docs/access-code.md). All generated languages use the
+same model name and schema hash. Code frames remain peer-only; the browser
+consumer receives generated validation code but no lookup UI or authorization.
+HTTP catalog/list responses are compatibility-projected: only the exact
+`X-Sync-Extensions: access-code` request opts into the new capability/code-session
+rows. No header retains the genuine old enum7/maxItems7/purpose2 response domain.
+The header is not permission and does not alter explicit ticket/connect
+declarations or base protocol2. Schema/hash and generated outputs are unchanged
+by this projection; all new native requests, including config probes, opt in.
+
 ## CLI Chat1
 
-`cliChatProtocolVersion:1` is independent of base2/CLI1 and is never an eighth
+`cliChatProtocolVersion:1` is independent of base2/CLI1 and is not a
 capability. `WireDevice` reflects only the currently live ticket declaration;
 `WireRemoteSession` preserves the negotiated immutable snapshot. Old responses
 omit this version and `features.cliChat`; old API requests must omit the new

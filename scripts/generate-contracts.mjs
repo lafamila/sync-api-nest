@@ -78,6 +78,7 @@ export function checkSchema(contract) {
     ['maxSdpLength',contract.$defs.WireSignal.properties.sdp.maxLength],
     ['maxIceCandidateLength',contract.$defs.WireSignalCandidate.properties.candidate.maxLength],
     ['maxCapabilities',contract.$defs.Capabilities.maxItems],
+    ['accessCodeProtocolVersion',contract.$defs.WireAccessCodeFrame.properties.version.const],
     ['maxClientVersionLength',contract.$defs.WireDevice.properties.clientVersion.maxLength],
     ['cliProtocolVersion',contract.$defs.CliProtocolVersion.const],
     ['maxCliTextUtf8Bytes',contract.$defs.WireCliFrame.properties.text['x-maxUtf8Bytes']],
@@ -238,7 +239,7 @@ function csharpSource(contract, hash) {
   const meta = contract['x-sync'];
   const models = Object.entries(contract.$defs).filter(([name,model])=>name.startsWith('Wire') && model.type === 'object').map(([name, model]) => {
     const fs = fields(model,contract.$defs,'csharp');
-    const properties = fs.map(f=>`    [JsonPropertyName(${json(f.name)})]\n${(name.startsWith('WireCli') || ['cliProtocolVersion','cliChatProtocolVersion','cliChat'].includes(f.name)) && f.nullable && !f.schema['x-nullable'] ? '    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]\n' : ''}    public ${f.type}${f.nullable?'?':''} ${pascal(f.name)} { get; init; }${f.fallback !== undefined ? ` = ${literal(f.fallback,f.type,'csharp')};` : f.nullable ? '' : f.type === 'string' ? ' = string.Empty;' : f.type.startsWith('IReadOnlyList') ? ` = Array.Empty<${typeOf(unwrap(f.schema,contract.$defs).items,contract.$defs,'csharp')}>();` : f.type.startsWith('Wire') ? ' = new();' : ''}`).join('\n');
+    const properties = fs.map(f=>`    [JsonPropertyName(${json(f.name)})]\n${(name.startsWith('WireCli') || name === 'WireAccessCodeFrame' || ['cliProtocolVersion','cliChatProtocolVersion','cliChat'].includes(f.name)) && f.nullable && !f.schema['x-nullable'] ? '    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]\n' : ''}    public ${f.type}${f.nullable?'?':''} ${pascal(f.name)} { get; init; }${f.fallback !== undefined ? ` = ${literal(f.fallback,f.type,'csharp')};` : f.nullable ? '' : f.type === 'string' ? ' = string.Empty;' : f.type.startsWith('IReadOnlyList') ? ` = Array.Empty<${typeOf(unwrap(f.schema,contract.$defs).items,contract.$defs,'csharp')}>();` : f.type.startsWith('Wire') ? ' = new();' : ''}`).join('\n');
     // A parameterless constructor keeps System.Text.Json and native object initializers predictable.
     return `public sealed record ${name}\n{\n${properties}\n}`;
   }).join('\n\n');

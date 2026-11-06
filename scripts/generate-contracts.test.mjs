@@ -171,7 +171,7 @@ test('UTF8 byte, numeric, finite, array, SDP and display boundaries are exact', 
 
 test('CLI optional negotiation defaults never imply support and dates remain strings', () => {
   assert.equal(wire.SYNC_PROTOCOL_VERSION,2);
-  assert.equal(wire.SYNC_CAPABILITIES.length,7);
+  assert.equal(wire.SYNC_CAPABILITIES.length,8);
   assert.equal(wire.SYNC_CAPABILITIES.includes('cli-sessions'),false);
   for (const name of ['legacy-device-defaults','legacy-session-defaults']) {
     const fixture = fixtures.valid.find(f=>f.name === name);
@@ -300,7 +300,7 @@ test('chat negotiation remains separately optional and strict op fields reject c
   }
   assert.deepEqual(contract.$defs.WireCliReceipt.properties.state.enum,['received','queued','rejected','unknown']);
   assert.equal(wire.SYNC_PROTOCOL_VERSION,2);
-  assert.equal(wire.SYNC_CAPABILITIES.length,7);
+  assert.equal(wire.SYNC_CAPABILITIES.length,8);
 });
 
 test('chat validators reject own prototype-named additional properties',()=>{
@@ -350,6 +350,43 @@ test('chat pages, segments, warnings, chunk bytes and escaped frame budgets have
   assert.equal(wire.SYNC_LIMITS.maxCliPendingRequests,4);
 });
 
+test('access-code strict variants, capability and serialized byte limits are locked',()=>{
+  assert.equal(wire.SYNC_LIMITS.maxCapabilities,8);
+  assert.equal(wire.SYNC_LIMITS.accessCodeProtocolVersion,1);
+  assert.equal(wire.SYNC_LIMITS.accessCodeRequestTimeoutSeconds,10);
+  assert.equal(wire.SYNC_LIMITS.maxAccessCodeFrameBytes,2048);
+  assert.ok(wire.SYNC_CAPABILITIES.includes('access-code'));
+  const schema=contract.$defs.WireAccessCodeFrame;
+  for(const fixture of fixtures.valid.filter(f=>f.model==='WireAccessCodeFrame')) {
+    const {value}=fixture;
+    const branch=schema.oneOf.find(b=>b.properties.op.const===value.op);
+    for(const key of [...schema.required,...(branch.required ?? [])]) {
+      const changed={...value};delete changed[key];
+      assert.equal(wire.validateWire('WireAccessCodeFrame',changed),false,`${value.op} requires ${key}`);
+      assert.equal(wire.validateWire('WireAccessCodeFrame',{...value,[key]:null}),false);
+    }
+    for(const key of [...Object.keys(schema.properties),'extra','constructor','__proto__']) {
+      if(Object.hasOwn(branch.properties,key)) continue;
+      const changed=JSON.parse(JSON.stringify(value));
+      Object.defineProperty(changed,key,{value:'unexpected',enumerable:true});
+      assert.equal(wire.validateWire('WireAccessCodeFrame',changed),false,`${value.op} forbids ${key}`);
+      assert.equal(validateValue(contract,'WireAccessCodeFrame',changed),false);
+    }
+    const raw=JSON.stringify(value);
+    for(const size of [2048,2049]) {
+      const padded=raw+' '.repeat(size-Buffer.byteLength(raw));
+      assert.equal(wire.validateWire('WireAccessCodeFrame',JSON.parse(padded)),true);
+      assert.equal(Buffer.byteLength(padded)<=wire.SYNC_LIMITS.maxAccessCodeFrameBytes,size===2048);
+    }
+  }
+  const result=fixtures.valid.find(f=>f.name==='access-code-result').value;
+  for(const code of ['000000','999999','012345']) assert.equal(wire.validateWire('WireAccessCodeFrame',{...result,code}),true);
+  for(const code of ['12345','1234567','12345\n','１２３４５６','abcdef',123456,null]) {
+    assert.equal(wire.validateWire('WireAccessCodeFrame',{...result,code}),false);
+  }
+  for(const expiresAt of ['not-a-date','2026-11-06',null]) assert.equal(wire.validateWire('WireAccessCodeFrame',{...result,expiresAt}),false);
+});
+
 test('generated TS passes actual strict compiler (including literal-union arrays)', () => {
   execFileSync(process.execPath,[require.resolve('typescript/bin/tsc'),'--noEmit','--strict','--skipLibCheck','--target','ES2022','--moduleResolution','node',resolve(api,'src/generated/sync-wire.ts')],{ cwd:api,stdio:'pipe' });
 });
@@ -386,9 +423,13 @@ let decodedFrame = try SyncContract.decode(WireCliFrame.self,from:frameData)
 precondition(decodedFrame == frame)
 let frameJSON = try JSONSerialization.jsonObject(with:frameData) as! [String:Any]
 precondition(frameJSON["runtimeId"] == nil && frameJSON["text"] == nil && frameJSON["reason"] == nil)
-for example in examples where (example["model"] as! String).hasPrefix("WireCli") {
+for example in examples where (example["model"] as! String).hasPrefix("WireCli") || example["model"] as? String == "WireAccessCodeFrame" {
     let data = try JSONSerialization.data(withJSONObject:example["value"]!)
     switch example["model"] as! String {
+    case "WireAccessCodeFrame":
+        let model = try SyncContract.decode(WireAccessCodeFrame.self,from:data)
+        let roundTrip = try SyncContract.decode(WireAccessCodeFrame.self,from:JSONEncoder().encode(model))
+        precondition(roundTrip == model)
     case "WireCliSession":
         let model = try SyncContract.decode(WireCliSession.self,from:data)
         let roundTrip = try SyncContract.decode(WireCliSession.self,from:JSONEncoder().encode(model))
@@ -490,6 +531,7 @@ static class Program {
             var value = example.GetProperty("value");
             Check(SyncContract.Validate(model,value.GetRawText()) == (kind == "valid"),example.GetProperty("name").GetString()!);
             if(kind == "valid") switch(model) {
+                case "WireAccessCodeFrame": RoundTrip<WireAccessCodeFrame>(value); break;
                 case "WireCliFrame": RoundTrip<WireCliFrame>(value); break;
                 case "WireCliReceipt": RoundTrip<WireCliReceipt>(value); break;
                 case "WireCliSession": RoundTrip<WireCliSession>(value); break;
@@ -558,6 +600,7 @@ fun main(args: Array<String>) {
             val model = example.getString("model")
             check(SyncContract.validate(model,value) == (kind == "valid")) { example.getString("name") }
             if(kind == "valid") when(model) {
+                "WireAccessCodeFrame" -> check(WireAccessCodeFrame.fromJson(value).type == "access-code")
                 "WireCliFrame" -> check(WireCliFrame.fromJson(value).type == "cli")
                 "WireCliReceipt" -> check(WireCliReceipt.fromJson(value).updatedAt.contains("T"))
                 "WireCliSession" -> check(WireCliSession.fromJson(value).id == value.getString("id"))

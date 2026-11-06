@@ -68,9 +68,9 @@ describe('endpoint protocol negotiation',()=>{
 });
 
 describe('additive request validation',()=>{
-  it('accepts all seven declared capabilities including bounded lifetime without allowing an eighth entry',async()=>{
+  it('accepts all eight declared capabilities without allowing a ninth entry',async()=>{
     const proof={deviceId:randomUUID(),challengeId:'x'.repeat(32),signature:'YQ==',protocolVersion:2};
-    expect(SYNC_CAPABILITIES).toHaveLength(7);
+    expect(SYNC_CAPABILITIES).toHaveLength(8);
     expect(await validate(plainToInstance(DeviceTicketDto,{...proof,capabilities:[...SYNC_CAPABILITIES]}))).toEqual([]);
     expect(await validate(plainToInstance(DeviceTicketDto,{...proof,capabilities:[...SYNC_CAPABILITIES,'bounded-lifetime']}))).not.toEqual([]);
   });

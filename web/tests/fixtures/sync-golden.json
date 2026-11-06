@@ -1,5 +1,5 @@
 {
-  "schemaHash": "d064023b4a2809fc99c2b6120ca28c7e5c4a8cbb339106542b32b36fc7b4da46",
+  "schemaHash": "2951454e5a7a6babf4b6f82d3c4a35073430e66600db1b3981f097484ddfbc09",
   "description": "Public interoperable fixtures only. Never use this deterministic test key or nonce for authentication.",
   "proofs": {
     "testOnly": true,
@@ -30,6 +30,62 @@
     ]
   },
   "valid": [
+    {
+      "name": "access-code-request",
+      "model": "WireAccessCodeFrame",
+      "value": {
+        "type": "access-code",
+        "version": 1,
+        "op": "request",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555"
+      }
+    },
+    {
+      "name": "access-code-result",
+      "model": "WireAccessCodeFrame",
+      "value": {
+        "type": "access-code",
+        "version": 1,
+        "op": "result",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "code": "012345",
+        "expiresAt": "2026-11-06T12:00:00Z"
+      }
+    },
+    {
+      "name": "access-code-error",
+      "model": "WireAccessCodeFrame",
+      "value": {
+        "type": "access-code",
+        "version": 1,
+        "op": "error",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "reason": "not-authorized"
+      }
+    },
+    {
+      "name": "access-code-session",
+      "model": "WireRemoteSession",
+      "value": {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "hostId": "11111111-1111-4111-8111-111111111111",
+        "scope": "control",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "expiresAt": "2026-11-06T12:00:00Z",
+        "protocolVersion": 2,
+        "purpose": "access-code",
+        "capabilities": [
+          "bounded-lifetime",
+          "access-code"
+        ]
+      }
+    },
     {
       "name": "cli-chat-oversized-warning",
       "model": "WireCliChatFrame",
@@ -1670,6 +1726,46 @@
     }
   ],
   "invalid": [
+    {
+      "name": "access-code-request-payload",
+      "model": "WireAccessCodeFrame",
+      "value": {
+        "type": "access-code",
+        "version": 1,
+        "op": "request",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "code": "012345"
+      }
+    },
+    {
+      "name": "access-code-unicode-digits",
+      "model": "WireAccessCodeFrame",
+      "value": {
+        "type": "access-code",
+        "version": 1,
+        "op": "result",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "code": "１２３４５６",
+        "expiresAt": "2026-11-06T12:00:00Z"
+      }
+    },
+    {
+      "name": "access-code-unknown-reason",
+      "model": "WireAccessCodeFrame",
+      "value": {
+        "type": "access-code",
+        "version": 1,
+        "op": "error",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "reason": "forbidden"
+      }
+    },
     {
       "name": "cli-chat-invalid-warning",
       "model": "WireCliChatFrame",

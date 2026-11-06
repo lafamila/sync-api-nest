@@ -144,4 +144,26 @@ do $$ begin
     insert into sync_schema_migrations(version) values(5);
   end if;
 end $$;
+
+do $$ begin
+  if not exists(select 1 from sync_schema_migrations where version=6) then
+    alter table sync_remote_sessions drop constraint sync_remote_sessions_purpose_check;
+    alter table sync_remote_sessions add constraint sync_remote_sessions_purpose_check
+      check(purpose in ('screen','cli','access-code'));
+    alter table sync_remote_sessions add constraint sync_access_code_session_consistency check(
+      purpose<>'access-code' or (protocol_version>=2 and controller_kind='native' and scope='control'
+        and controller_device_id is not null and controller_device_id<>host_device_id
+        and authorization_grant_id is not null and host_endpoint_id is not null
+        and cli_protocol_version is null and cli_chat_protocol_version is null
+        and jsonb_typeof(capabilities)='array' and capabilities @> '["access-code"]'::jsonb
+        and capabilities <@ '["access-code","bounded-lifetime"]'::jsonb
+        and jsonb_array_length(capabilities)<=2));
+    drop index sync_one_controller_per_host_idx;
+    create unique index sync_one_controller_per_host_idx on sync_remote_sessions(host_device_id)
+      where ended_at is null and purpose<>'access-code';
+    create unique index sync_one_access_code_per_pair_idx on sync_remote_sessions(host_device_id,controller_device_id)
+      where ended_at is null and purpose='access-code';
+    insert into sync_schema_migrations(version) values(6);
+  end if;
+end $$;
 `;

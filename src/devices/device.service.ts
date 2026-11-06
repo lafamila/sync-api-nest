@@ -10,7 +10,7 @@ import { ApproveGrantDto, BrowserRecoveryDto, CapabilityUpdateDto, ConnectDevice
 import { DeviceProofService } from './device-proof.service';
 import { DeviceRepository } from './device.repository';
 import { ModeService } from './mode.service';
-import { EndpointFeatures, endpointFeatures, negotiate, requireBoundedHost, requireCliProtocol, requireCliChatProtocol, requireWebProtocol, supportsSession } from '../common/protocol';
+import { EndpointFeatures, endpointFeatures, negotiate, requireAccessCodeProtocol, requireBoundedHost, requireCliProtocol, requireCliChatProtocol, requireWebProtocol, supportsSession } from '../common/protocol';
 import { randomOpaque, sha256 } from '../common/crypto';
 import { WireBrowserActivityState } from '../generated/sync-wire';
 
@@ -39,11 +39,13 @@ export class DeviceService {
       mode:await this.modes.get(session.account.id,id)} };
   }
 
-  async list(session: AuthSessionContext) {
+  async list(session: AuthSessionContext,accessCodeProjection=false) {
     const devices = await this.devices.listOwned(session.account.id);
     return { devices: await Promise.all(devices.map(async (device) => {
       const endpoint=await this.tickets.activeEndpoint(device.id);
-      return {...presentDevice(device,endpoint),online:Boolean(endpoint),mode:await this.modes.get(session.account.id,device.id)};
+      const presented=presentDevice(device,endpoint);
+      return {...presented,capabilities:presented.capabilities.filter(capability=>accessCodeProjection || capability!=='access-code'),
+        online:Boolean(endpoint),mode:await this.modes.get(session.account.id,device.id)};
     })) };
   }
 
@@ -91,7 +93,11 @@ export class DeviceService {
 
   async connect(session: AuthSessionContext, hostId: string, input: ConnectDeviceDto, ip: string) {
     const purpose=input.purpose ?? 'screen';
-    const chat=input.cliChatProtocolVersion!==undefined;
+    const accessCode=purpose==='access-code';
+    const chat=!accessCode && input.cliChatProtocolVersion!==undefined;
+    if(accessCode && (session.source!=='native' || input.scope!=='control' || input.code!==undefined)) {
+      throw new ForbiddenException('Access code lookup requires trusted native control without PIN access');
+    }
     if(chat && (session.source!=='native' || input.scope!=='control' || input.code!==undefined)) {
       throw new ForbiddenException('CLI chat requires trusted native control without PIN access');
     }
@@ -102,12 +108,14 @@ export class DeviceService {
     if(input.rememberDevice) throw new BadRequestException('rememberDevice cannot create trust; approve the controller from the host device');
     const host = await this.devices.findOwned(session.account.id,hostId);
     if (!host) {
-      if(purpose==='cli' || chat) throw new ForbiddenException('CLI host is not authorized');
+      if(purpose==='cli' || chat || accessCode) throw new ForbiddenException('Host is not authorized');
       throw new NotFoundException('Host device not found');
     }
     if((purpose==='cli' || chat) && host.platform!=='macos') throw new ForbiddenException('CLI sessions require a Mac host');
+    if(accessCode && !['macos','windows'].includes(host.platform)) throw new ForbiddenException('Access code lookup requires a desktop host');
     if (isMobile(host.platform) && input.scope !== 'view') throw new ForbiddenException('Mobile hosts support view-only sessions');
     let mode = await this.modes.require(session.account.id,hostId);
+    if(accessCode && !mode.allowBrowser) throw new ForbiddenException('Web and temporary access is disabled for this mode');
     let controllerDeviceId: string | undefined;
     let authorizationGrantId:string|undefined;
     if (session.source === 'web') {
@@ -120,12 +128,12 @@ export class DeviceService {
       mode = await this.modes.verifyPin(session.account,hostId,input.code,ip);
     } else {
       if (!input.controllerDeviceId || !input.challengeId || !input.signature) {
-        if(purpose==='cli' || chat) throw new ForbiddenException('CLI sessions require native device proof');
+        if(purpose==='cli' || chat || accessCode) throw new ForbiddenException('Trusted native device proof is required');
         throw new BadRequestException('Native connection requires device proof');
       }
       controllerDeviceId = input.controllerDeviceId;
       if (controllerDeviceId === hostId) {
-        if(purpose==='cli' || chat) throw new ForbiddenException('CLI controller must differ from the host');
+        if(purpose==='cli' || chat || accessCode) throw new ForbiddenException('Controller must differ from the host');
         throw new BadRequestException('Host and controller devices must differ');
       }
       try {
@@ -133,7 +141,7 @@ export class DeviceService {
           deviceId:controllerDeviceId, challengeId:input.challengeId, signature:input.signature,
         });
       } catch(error) {
-        if((purpose==='cli' || chat) && error instanceof NotFoundException) throw new ForbiddenException('CLI controller is not authorized');
+        if((purpose==='cli' || chat || accessCode) && error instanceof NotFoundException) throw new ForbiddenException('Controller is not authorized');
         throw error;
       }
       const grant = await this.devices.findGrant(session.account.id,hostId,controllerDeviceId);
@@ -141,6 +149,7 @@ export class DeviceService {
       const requiresPin = !grantAllows;
       if(grantAllows) authorizationGrantId=grant.id;
       if((purpose==='cli' || chat) && (!grant || grant.scope!=='control')) throw new ForbiddenException('CLI sessions require a control grant');
+      if(accessCode && (!grant || grant.scope!=='control')) throw new ForbiddenException('Access code lookup requires a control grant');
       if (requiresPin) {
         if(isMobile(host.platform) || !mode.allowBrowser) {
           throw new ForbiddenException('Untrusted temporary connections are disabled for this host');
@@ -153,22 +162,31 @@ export class DeviceService {
     if (!endpoint) throw new ForbiddenException('Host device is offline');
     const features=negotiate(endpoint,endpointFeatures(input));
     const cliEligible=session.source==='native' && host.platform==='macos' && input.scope==='control' && Boolean(authorizationGrantId);
-    if(!cliEligible) { delete features.cliProtocolVersion; delete features.cliChatProtocolVersion; }
+    if(!cliEligible || accessCode) { delete features.cliProtocolVersion; delete features.cliChatProtocolVersion; }
     if(chat) requireCliChatProtocol(features);
     if(purpose==='cli') requireCliProtocol(features,endpoint,this.config.config.requireBoundedHosts);
     else requireBoundedHost(endpoint,this.config.config.requireBoundedHosts);
     if(purpose==='cli') features.capabilities=[];
+    if(accessCode) {
+      requireAccessCodeProtocol(features);
+      features.capabilities=features.capabilities.filter(capability=>capability==='access-code' || capability==='bounded-lifetime');
+    } else features.capabilities=features.capabilities.filter(capability=>capability!=='access-code');
     const activityToken=session.source==='web'?randomOpaque(32):undefined;
     const expiresAt = new Date(Math.min(Date.parse(mode.expiresAt), Date.now() + this.config.config.remoteSessionTtlSeconds * 1000));
-    const remote = await this.sessions.create({ ownerAccountId:session.account.id,hostId,controllerDeviceId,
+    const createInput:Parameters<RemoteSessionService['create']>[0]={ ownerAccountId:session.account.id,hostId,controllerDeviceId,
       controllerKind:session.source === 'web' ? 'browser' : 'native',scope:input.scope,epoch:mode.epoch,
       authSessionId:session.databaseId,expiresAt,...features,purpose,hostEndpointId:endpoint.id,
       authorizationGrantId,connectionTimeoutSeconds:this.config.config.ticketTtlSeconds,
-      activityTokenHash:activityToken?sha256(activityToken):undefined,idleTimeoutSeconds:this.config.config.webIdleTimeoutSeconds });
+      activityTokenHash:activityToken?sha256(activityToken):undefined,idleTimeoutSeconds:this.config.config.webIdleTimeoutSeconds };
+    const remote=accessCode ? await this.sessions.create(createInput,async()=>{
+      const liveMode=await this.modes.require(session.account.id,hostId);
+      const liveEndpoint=await this.tickets.activeEndpoint(hostId);
+      return liveMode.epoch===mode.epoch && liveMode.allowBrowser && liveEndpoint?.id===endpoint.id && supportsSession(liveEndpoint,features);
+    }) : await this.sessions.create(createInput);
     try {
       const currentMode=await this.modes.require(session.account.id,hostId);
       const currentEndpoint=await this.tickets.activeEndpoint(hostId);
-      if(currentMode.epoch!==mode.epoch || currentEndpoint?.id!==endpoint.id || !supportsSession(currentEndpoint,features)) {
+      if(currentMode.epoch!==mode.epoch || (accessCode && !currentMode.allowBrowser) || currentEndpoint?.id!==endpoint.id || !supportsSession(currentEndpoint,features)) {
         throw new ForbiddenException('Remote mode changed during connection authorization');
       }
       const ticket = await this.tickets.issue({ role:'controller', ownerAccountId:session.account.id,

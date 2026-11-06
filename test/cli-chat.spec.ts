@@ -85,7 +85,7 @@ describe('CLI chat optional metadata compatibility',()=>{
     const config=new HealthController(new SyncConfigService(testConfig()),{} as never,{} as never).publicConfig();
     expect(config.features.cliChat).toBe(true);
     expect(validateWire('WirePublicConfig',config)).toBe(true);
-    expect(SYNC_CAPABILITIES).toHaveLength(7);
+    expect(SYNC_CAPABILITIES).toHaveLength(8);
     expect(SYNC_LIMITS.cliProtocolVersion).toBe(1);
   });
 });

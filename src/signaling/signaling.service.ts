@@ -136,9 +136,13 @@ export class SignalingService implements OnModuleDestroy {
         }
         const resumed=await this.sessions.bindHostEndpoint(session,connection.id,()=>
           this.isCurrent(connection) && !this.stopping && connection.socket.readyState===WebSocket.OPEN &&
-          !this.snapshotRevoked(ended,connection,session));
+          !this.snapshotRevoked(ended,connection,session),()=>this.modeMatches(session));
         if(!this.isCurrent(connection)) return;
         if(!resumed || this.snapshotRevoked(ended,connection,resumed)) continue;
+        if(resumed.purpose==='access-code' && !await this.modeMatches(resumed)) {
+          await this.sessions.endIfActive(resumed.ownerAccountId,resumed.id,'mode_invalid');continue;
+        }
+        if(!this.isCurrent(connection) || this.snapshotRevoked(ended,connection,resumed)) continue;
         this.sessionHosts.set(resumed.id,resumed.hostId);
         this.sendSessionStart(connection.socket,resumed);
       }
@@ -157,6 +161,7 @@ export class SignalingService implements OnModuleDestroy {
       await this.authSessions.revalidateById(ticket.authSessionId);
       const session=await this.sessions.findActive(ticket.sessionId);
       if(!session || session.ownerAccountId!==ticket.ownerAccountId || session.authSessionId!==ticket.authSessionId) throw new Error('session invalid');
+      if(session.purpose==='access-code' && ticket.browser) throw new Error('native controller required');
       if(!await this.modeMatches(session)) { await this.sessions.endIfActive(session.ownerAccountId,session.id,'mode_invalid'); throw new Error('mode invalid'); }
       const activeHost=this.devices.get(session.hostId);
       if(!activeHost || !this.supportsHost(activeHost,session)) {
@@ -174,7 +179,7 @@ export class SignalingService implements OnModuleDestroy {
         this.controllers.set(current.id,connection);
         this.sessionHosts.set(current.id,current.hostId);
         return true;
-      });
+      },async()=>await this.modeMatches(session) && this.devices.get(session.hostId)===activeHost && this.supportsHost(activeHost,session));
       const modeValid=await this.modeMatches(installed);
       const host=this.devices.get(installed.hostId);
       if(!this.isCurrent(connection) || connection.socket.readyState!==WebSocket.OPEN || this.stopping ||
@@ -208,7 +213,11 @@ export class SignalingService implements OnModuleDestroy {
         return this.reject(connection.socket,'session invalid');
       }
       if(!this.isCurrent(connection) || connection.socket.readyState!==WebSocket.OPEN || this.snapshotRevoked(ended,connection,session) || session.ownerAccountId!==connection.ticket.ownerAccountId) return this.reject(connection.socket,'route denied');
-      if(display && session.purpose==='cli') return this.reject(connection.socket,'CLI sessions do not support displays');
+      if(display && (session.purpose==='cli' || session.purpose==='access-code')) return this.reject(connection.socket,'Data-only sessions do not support displays');
+      if(session.purpose==='access-code' && (message.type==='offer' || message.type==='answer') &&
+        typeof message.sdp==='string' && /^m=(audio|video)(?:\s|$)/m.test(message.sdp)) {
+        return this.reject(connection.socket,'Access code sessions do not support media');
+      }
       if(display && (session.protocolVersion<2 || !session.capabilities.includes('host-displays') || !session.capabilities.includes('viewer-displays'))) {
         return this.reject(connection.socket,'display signaling not negotiated');
       }
@@ -353,10 +362,18 @@ export class SignalingService implements OnModuleDestroy {
 
   private async modeMatches(session:RemoteSession):Promise<boolean> {
     const mode=await this.modes.get(session.ownerAccountId,session.hostId);
-    return Boolean(mode && mode.epoch===session.epoch);
+    return Boolean(mode && mode.epoch===session.epoch &&
+      ((session.controllerKind!=='browser' && session.purpose!=='access-code') || mode.allowBrowser));
   }
   private supportsHost(connection:Connection,session:RemoteSession):boolean {
     if(connection.ticket.role!=='device' || !supportsSession(endpointFeatures(connection.ticket),session,this.config.config.requireBoundedHosts)) return false;
+    if(session.purpose==='access-code') return session.protocolVersion>=2 && session.capabilities.includes('access-code') &&
+      session.capabilities.every(capability=>capability==='access-code' || capability==='bounded-lifetime') &&
+      session.cliProtocolVersion===undefined && session.cliChatProtocolVersion===undefined &&
+      session.hostEndpointId===connection.id && ['macos','windows'].includes(connection.ticket.platform) &&
+      connection.ticket.deviceId===session.hostId && connection.ticket.ownerAccountId===session.ownerAccountId &&
+      session.controllerKind==='native' && session.scope==='control' &&
+      Boolean(session.controllerDeviceId && session.controllerDeviceId!==session.hostId && session.authorizationGrantId);
     if(session.purpose==='cli' && session.cliProtocolVersion===undefined) return false;
     return session.cliProtocolVersion===undefined || (session.hostEndpointId===connection.id && connection.ticket.platform==='macos' &&
       connection.ticket.ownerAccountId===session.ownerAccountId && session.controllerKind==='native' && session.scope==='control' &&

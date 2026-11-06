@@ -48,6 +48,12 @@ export function requireCliProtocol(features:EndpointFeatures,host:EndpointFeatur
   }
 }
 
+export function requireAccessCodeProtocol(features:EndpointFeatures):void {
+  if(features.protocolVersion<2 || !features.capabilities.includes('access-code')) {
+    throw new HttpException({statusCode:426,error:'access-code-update-required',message:'Update both apps to support access code lookup'},426);
+  }
+}
+
 export function requireBoundedHost(host:EndpointFeatures,required:boolean):void {
   // Compatibility declaration only: this is neither software attestation nor authorization.
   if(required && !host.capabilities.includes('bounded-lifetime')) {

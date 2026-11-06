@@ -10,6 +10,13 @@
 
 ## 실행
 
+Trusted Access Code의 migration6은 아직 운영에 적용하지 않았다. 사용자 배포 시
+전용 Sync DB를 먼저 백업한 뒤 통상 migration/start 경로를 사용한다. 기존 v5
+행과 일반 host 단일성을 보존하며 code-only 연결은 별도 host/controller pair
+index로 공존한다. 신규 secret/env/auth 등록은 필요하지 않다. 구형 클라이언트의
+화면/CLI/chat 동작은 유지하고, 코드 조회는 capability가 없으면426으로 거부한다.
+원문 코드를 서버 로그나 진단 dump에 추가하지 않는다. [계약과 검증](../docs/access-code.md)을 따른다.
+
 NAS에 repo source와 workspace `.scripts/deploy-sync-prod.sh`를 반영한 다음 실행한다.
 
 스크립트는 `git pull --ff-only` 후 이미지를 빌드하며, pull/build/환경 검증이 실패하면 기존 Sync 컨테이너를 중지하지 않는다. Git checkout과 `.env`가 먼저 준비되어 있어야 한다. `--dry-run`은 pull 명령까지 출력만 하고 실행하지 않는다. `.scripts/deploy-sync-prod.sh`는 API 레포 밖의 workspace 파일이므로 API의 `git pull`만으로 갱신되지 않으며 NAS의 같은 경로에 따로 반영해야 한다.

@@ -20,8 +20,8 @@ export class RemoteSessionService implements OnModuleInit, OnModuleDestroy {
   }
   onModuleDestroy(): void { this.unsubscribe?.(); }
 
-  async create(input:CreateRemoteSessionInput): Promise<RemoteSession> {
-    try { return await this.repository.create({...input,runtimeNamespace:this.identity.namespace,signalingInstanceId:this.identity.instanceId}); }
+  async create(input:CreateRemoteSessionInput,validateAuthority?:()=>Promise<boolean>): Promise<RemoteSession> {
+    try { return await this.repository.create({...input,runtimeNamespace:this.identity.namespace,signalingInstanceId:this.identity.instanceId},undefined,undefined,validateAuthority); }
     catch (error) {
       if (isPgUniqueViolation(error)) throw new ConflictException('Host already has an active controller');
       throw error;

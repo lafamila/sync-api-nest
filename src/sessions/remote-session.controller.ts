@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, NotFoundException, Optional, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Optional, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
+import { setExtensionProjectionHeaders, supportsAccessCodeProjection } from '../common/http-extensions';
 import { SessionGuard } from '../auth/session.guard';
 import { AuthenticatedRequest } from '../common/request';
 import { RequestSecurityService } from '../common/request-security.service';
@@ -13,7 +15,12 @@ export class RemoteSessionController {
   constructor(private readonly sessions:RemoteSessionService,private readonly proofs:DeviceProofService,private readonly security:RequestSecurityService,
     @Optional() private readonly devices?:DeviceService) {}
   @Get()
-  async list(@Req() req:AuthenticatedRequest) { return { sessions:(await this.sessions.listOwned(req.syncSession.account.id)).map(presentSession) }; }
+  async list(@Req() req:AuthenticatedRequest,@Res({passthrough:true}) response?:Response) {
+    setExtensionProjectionHeaders(response);
+    const accessCodeProjection=supportsAccessCodeProjection(req);
+    return {sessions:(await this.sessions.listOwned(req.syncSession.account.id))
+      .filter(session=>accessCodeProjection || session.purpose!=='access-code').map(presentSession)};
+  }
   @Post(':id/activity')
   activity(@Req() req:AuthenticatedRequest,@Param('id') id:string,@Body() input:BrowserActivityDto) {
     this.security.assertMutation(req,req.syncSession);

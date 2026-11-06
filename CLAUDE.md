@@ -13,7 +13,7 @@ Root canonical plan: `../.idea/SYNC_REMOTE_ACCESS_PLAN.md`. 세부 계약 변경
 
 ## 검토 기준
 
-CLI1 확장은 `docs/cli-sessions.md`와 root `.docs/SYNC_CLI_PROTOCOL.md`를 따른다. 기존 protocol2/7 capabilities는 유지하고 schema/generator/모든 언어 출력을 함께 갱신한다. live native proof+same-owner control grant+Mac mode만 허용하며 PIN/browser/view는 금지한다. CLI 본문은 DataChannel 전용이고 HTTP/WSS/DB/log로 보내지 않는다. migration4는 additive이며 실제 운영 적용은 사용자 배포 절차를 따른다. queued는 처리 완료가 아니고 unknown은 자동 재발송하지 않는다.
+CLI1 확장은 `docs/cli-sessions.md`와 root `.docs/SYNC_CLI_PROTOCOL.md`를 따른다. base protocol2와 기존 capability 의미를 유지하며 전체 allowlist는 generated 계약을 따른다. schema/generator/모든 언어 출력을 함께 갱신한다. live native proof+same-owner control grant+Mac mode만 허용하며 PIN/browser/view는 금지한다. CLI 본문은 DataChannel 전용이고 HTTP/WSS/DB/log로 보내지 않는다. migration4는 additive이며 실제 운영 적용은 사용자 배포 절차를 따른다. queued는 처리 완료가 아니고 unknown은 자동 재발송하지 않는다.
 
 chat1은 fresh ticket/connect에서만 별도로 협상하고 session snapshot을 사후 승격하지 않는다. migration5는 nullable metadata만 추가한다. 대화 본문은 peer 전용이며 서버에는 transcript 테이블/endpoint를 만들지 않는다. `/api/cli-profiles/v1/`는 고정된 공개 서명 파일4개만 제공하며 private signer/key는 서버에 두지 않는다. DB 회귀는 전용 sync_test의 고유 schema/Redis prefix만 사용하고 public schema truncate를 금지한다.
 
@@ -30,6 +30,25 @@ TURN의 base/TLS Compose는 Synology `docker-compose` v1 호환을 위해 양쪽
 Docker의 backend/web/runtime `npm ci`는 유한한 fetch 재시도로 일시적 네트워크 오류를 보완하며 lockfile·TLS·실패 전파는 유지한다. NAS의 지속적인 `ETIMEDOUT`은 해당 Docker 네트워크의 registry 연결을 별도 확인하며, registry/TLS 우회나 기존 서비스 종료로 해결하지 않는다. Workspace 배포 스크립트의 변경은 API checkout과 별도로 NAS에 반영한다.
 
 고정 coturn4.18 설정은 `cli=0`·`dtls=0`과 기본 TLS최소1.2를 유지하고 제거된 구형 옵션을 생성하지 않는다. TURN은 UID/GID0:0 + cap_dropALL이므로 전용 인증서/키 복사본의 root 소유·mode600을 유지한다. TLS 실패에서 파일 존재와 실제 프로세스의 읽기 가능 여부를 구분하며, chmod644/777·capability 추가·인증서 검증 해제로 우회하지 않는다. 생성기 수정 후 기존 conf 재생성과 TURN 재생성이 별도로 필요하다.
+
+## Trusted Access Code
+
+`docs/access-code.md` is the additive capability8/purpose `access-code` contract.
+Keep base2 and the original seven capabilities/CLI/chat semantics. Code-only
+sessions require fresh native proof, same-owner nonself desktop host, directional
+permanent control grant, current allowBrowser mode/epoch and the original live
+endpoint. Strip CLI/chat metadata and all capabilities except access-code plus
+negotiated bounded-lifetime; ordinary screen/CLI never gains code authority.
+Creation/install/bind must recheck mode/endpoint inside the DB authorization locks.
+Strict peer frames never enter HTTP/WSS/DB/audit/logs; no browser feature UI.
+HTTP compatibility uses exact `X-Sync-Extensions: access-code` opt-in on all new
+native requests. Default config/devices project legacy7 capabilities and sessions
+omit code-purpose rows. All three GETs are no-store and vary on the extension
+header while preserving Origin. This is not permission or auth-session metadata;
+explicit capability/proof/grant checks remain authoritative without this header.
+Migration6 preserves v5 rows and ordinary host exclusivity, with one code-only
+session per host/controller pair. Test only fresh loopback sync_test schemas and
+UUID Redis prefixes. Do not apply migration6 to dev/production during coding.
 
 ## Build Artifact Retention
 

@@ -1,0 +1,34 @@
+{
+  "description": "Frozen pre-access-code schema domains from the pre-feature Git contract. Strict legacy enum/maxItems/purpose bounds, not generated from the current capability catalog.",
+  "$defs": {
+    "Capability": {
+      "type": "string",
+      "enum": [
+        "screen-host",
+        "input-host",
+        "host-displays",
+        "viewer-displays",
+        "multi-window",
+        "mode-duration",
+        "bounded-lifetime"
+      ]
+    },
+    "Capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Capability"
+      },
+      "maxItems": 7,
+      "uniqueItems": true,
+      "default": []
+    },
+    "SessionPurpose": {
+      "type": "string",
+      "enum": [
+        "screen",
+        "cli"
+      ],
+      "default": "screen"
+    }
+  }
+}

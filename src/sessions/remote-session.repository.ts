@@ -8,7 +8,7 @@ interface SessionRow {
   controller_kind: 'browser' | 'native'; scope: 'view' | 'control'; mode_epoch: string; auth_session_id: string;
   runtime_namespace:string; signaling_instance_id:string;
   protocol_version:number; capabilities:string[]; host_endpoint_id:string|null;
-  purpose:'screen'|'cli'; cli_protocol_version:number|null; cli_chat_protocol_version:number|null;
+  purpose:'screen'|'cli'|'access-code'; cli_protocol_version:number|null; cli_chat_protocol_version:number|null;
   activity_token_hash:string|null; last_activity_at:Date|null; idle_deadline:Date|null; recovery_consumed:boolean;
   authorization_grant_id:string|null; connection_deadline:Date|null; connected_at:Date|null;
   created_at: Date; expires_at: Date; ended_at: Date | null; end_reason: string | null;
@@ -20,7 +20,7 @@ export interface RemoteSession {
   authSessionId: string; createdAt: string; expiresAt: string; endedAt: string | null; endReason: string | null;
   runtimeNamespace:string; signalingInstanceId:string;
   protocolVersion:number; capabilities:string[]; hostEndpointId:string|null;
-  purpose?:'screen'|'cli'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
+  purpose?:'screen'|'cli'|'access-code'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
   lastActivityAt:string|null; idleDeadline:string|null;
   authorizationGrantId?:string|null; connectionDeadline?:string|null; connectedAt?:string|null;
 }
@@ -31,7 +31,7 @@ export interface CreateSessionInput {
   runtimeNamespace:string; signalingInstanceId:string; protocolVersion?:number; capabilities?:string[];
   hostEndpointId?:string; activityTokenHash?:string; idleTimeoutSeconds?:number;
   authorizationGrantId?:string; connectionTimeoutSeconds?:number;
-  purpose?:'screen'|'cli'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
+  purpose?:'screen'|'cli'|'access-code'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
 }
 
 const RECOVERABLE_REASONS = ['controller_disconnected','device_disconnected','server_shutdown','server_restarted'];
@@ -43,9 +43,10 @@ const ACTIVE = `ended_at is null and expires_at > clock_timestamp()
 export class RemoteSessionRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async create(input: CreateSessionInput, query?:Query, continuity?:SessionRow): Promise<RemoteSession> {
-    if (!query) return this.db.transaction((transaction) => this.create(input,transaction,continuity));
+  async create(input: CreateSessionInput, query?:Query, continuity?:SessionRow, validateAuthority?:()=>Promise<boolean>): Promise<RemoteSession> {
+    if (!query) return this.db.transaction((transaction) => this.create(input,transaction,continuity,validateAuthority));
     await this.lockAuthorization(query,input);
+    await this.validateCodeAuthority(input.purpose,validateAuthority);
     const id = randomUUID();
     const result = await query<SessionRow>(
       `insert into sync_remote_sessions(id,owner_account_id,host_device_id,controller_device_id,controller_kind,scope,mode_epoch,auth_session_id,expires_at,runtime_namespace,signaling_instance_id,
@@ -65,7 +66,14 @@ export class RemoteSessionRepository {
     return mapSession(result.rows[0]);
   }
 
-  private async lockAuthorization(query:Query,input:Pick<CreateSessionInput,'ownerAccountId'|'authSessionId'|'controllerKind'|'hostId'|'controllerDeviceId'|'authorizationGrantId'|'scope'|'purpose'|'cliProtocolVersion'|'cliChatProtocolVersion'|'protocolVersion'|'hostEndpointId'>):Promise<void> {
+  private async lockAuthorization(query:Query,input:Pick<CreateSessionInput,'ownerAccountId'|'authSessionId'|'controllerKind'|'hostId'|'controllerDeviceId'|'authorizationGrantId'|'scope'|'purpose'|'cliProtocolVersion'|'cliChatProtocolVersion'|'protocolVersion'|'hostEndpointId'|'capabilities'>):Promise<void> {
+    const accessCode=input.purpose==='access-code';
+    if(accessCode && ((input.protocolVersion ?? 1)<2 || input.controllerKind!=='native' || input.scope!=='control' ||
+      !input.controllerDeviceId || input.controllerDeviceId===input.hostId || !input.authorizationGrantId || !input.hostEndpointId ||
+      input.cliProtocolVersion!==undefined || input.cliChatProtocolVersion!==undefined ||
+      !input.capabilities?.includes('access-code') || input.capabilities.some(capability=>!['access-code','bounded-lifetime'].includes(capability)))) {
+      throw new ForbiddenException('Access code lookup requires isolated trusted native control');
+    }
     if(input.cliChatProtocolVersion!==undefined && input.cliChatProtocolVersion!==1) throw new ForbiddenException('Unsupported CLI chat protocol');
     const cli=input.cliProtocolVersion!==undefined || input.purpose==='cli' || input.cliChatProtocolVersion!==undefined;
     if(cli && (input.cliProtocolVersion!==1 || (input.protocolVersion ?? 1)<2 || input.controllerKind!=='native' ||
@@ -84,6 +92,9 @@ export class RemoteSessionRepository {
     if(cli && !(await query(`select 1 from sync_devices where id=$1 and platform='macos'`,[input.hostId])).rowCount) {
       throw new ForbiddenException('CLI sessions require a Mac host');
     }
+    if(accessCode && !(await query(`select 1 from sync_devices where id=$1 and platform in ('macos','windows')`,[input.hostId])).rowCount) {
+      throw new ForbiddenException('Access code lookup requires a desktop host');
+    }
     if(input.authorizationGrantId) {
       const grant=await query(`select id from sync_device_grants where id=$1 and owner_account_id=$2
         and host_device_id=$3 and controller_device_id=$4 and revoked_at is null
@@ -96,52 +107,71 @@ export class RemoteSessionRepository {
     if(!active.rowCount) throw new ForbiddenException('Local authentication session expired');
   }
 
-  async installController(snapshot:RemoteSession,install:(session:RemoteSession)=>boolean):Promise<RemoteSession> {
+  async installController(snapshot:RemoteSession,install:(session:RemoteSession)=>boolean,validateAuthority?:()=>Promise<boolean>):Promise<RemoteSession> {
     return this.db.transaction(async(query)=>{
       await this.lockAuthorization(query,{ownerAccountId:snapshot.ownerAccountId,hostId:snapshot.hostId,
         authSessionId:snapshot.authSessionId,controllerKind:snapshot.controllerKind,
         controllerDeviceId:snapshot.controllerDeviceId ?? undefined,scope:snapshot.scope,
         authorizationGrantId:snapshot.authorizationGrantId ?? undefined,purpose:snapshot.purpose,cliProtocolVersion:snapshot.cliProtocolVersion,
         cliChatProtocolVersion:snapshot.cliChatProtocolVersion,
-        protocolVersion:snapshot.protocolVersion,hostEndpointId:snapshot.hostEndpointId ?? undefined});
+        protocolVersion:snapshot.protocolVersion,hostEndpointId:snapshot.hostEndpointId ?? undefined,capabilities:snapshot.capabilities});
       await query(`select id from sync_remote_sessions where id=$1 for update`,[snapshot.id]);
+      await this.validateCodeAuthority(snapshot.purpose,validateAuthority);
       // Time is evaluated after the row lock, so a stale discovery snapshot cannot claim a reservation.
       const result=await query<SessionRow>(`update sync_remote_sessions set connected_at=coalesce(connected_at,clock_timestamp())
         where id=$1 and owner_account_id=$2 and auth_session_id=$3 and ${ACTIVE}
-        and (cli_protocol_version is null or (cli_protocol_version=$4 and purpose=$5
+        and ((cli_protocol_version is null and purpose<>'access-code') or (cli_protocol_version is not distinct from $4::integer and purpose=$5
           and authorization_grant_id=$6 and host_endpoint_id=$7))
         and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9
         and exists(select 1 from sync_auth_sessions where id=$3 and expires_at>clock_timestamp()) returning *`,
         [snapshot.id,snapshot.ownerAccountId,snapshot.authSessionId,snapshot.cliProtocolVersion ?? null,snapshot.purpose ?? 'screen',
          snapshot.authorizationGrantId ?? null,snapshot.hostEndpointId,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch]);
       const row=result.rows[0];
+      if(row && (row.purpose==='access-code' || snapshot.purpose==='access-code')) this.assertCodeSnapshot(snapshot,mapSession(row));
       if(!row || !install(mapSession(row))) throw new ForbiddenException('Session closed during controller installation');
       return mapSession(row);
     });
   }
 
-  async bindHostEndpoint(snapshot:RemoteSession,endpointId:string,isCurrent:()=>boolean):Promise<RemoteSession|undefined> {
+  async bindHostEndpoint(snapshot:RemoteSession,endpointId:string,isCurrent:()=>boolean,validateAuthority?:()=>Promise<boolean>):Promise<RemoteSession|undefined> {
     return this.db.transaction(async(query)=>{
-      if(snapshot.cliProtocolVersion!==undefined || snapshot.purpose==='cli' || snapshot.cliChatProtocolVersion!==undefined) {
+      if(snapshot.cliProtocolVersion!==undefined || snapshot.purpose==='cli' || snapshot.purpose==='access-code' || snapshot.cliChatProtocolVersion!==undefined) {
         await this.lockAuthorization(query,{ownerAccountId:snapshot.ownerAccountId,hostId:snapshot.hostId,
           authSessionId:snapshot.authSessionId,controllerKind:snapshot.controllerKind,
           controllerDeviceId:snapshot.controllerDeviceId ?? undefined,scope:snapshot.scope,
           authorizationGrantId:snapshot.authorizationGrantId ?? undefined,purpose:snapshot.purpose,
           cliProtocolVersion:snapshot.cliProtocolVersion,cliChatProtocolVersion:snapshot.cliChatProtocolVersion,protocolVersion:snapshot.protocolVersion,
-          hostEndpointId:snapshot.hostEndpointId ?? undefined});
+          hostEndpointId:snapshot.hostEndpointId ?? undefined,capabilities:snapshot.capabilities});
       }
       await query(`select id from sync_remote_sessions where id=$1 for update`,[snapshot.id]);
+      await this.validateCodeAuthority(snapshot.purpose,validateAuthority);
       // Adopt legacy/null bindings on resume; a superseded registration must never reclaim a newer endpoint.
       if(!isCurrent()) return undefined;
       const result=await query<SessionRow>(`update sync_remote_sessions set host_endpoint_id=$2
         where id=$1 and owner_account_id=$3 and host_device_id=$4 and ${ACTIVE}
-        and (cli_protocol_version is null or (host_endpoint_id=$2 and cli_protocol_version=$5
+        and ((cli_protocol_version is null and purpose<>'access-code') or (host_endpoint_id=$2 and cli_protocol_version is not distinct from $5::integer
           and purpose=$6 and authorization_grant_id=$7))
         and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9 returning *`,
         [snapshot.id,endpointId,snapshot.ownerAccountId,snapshot.hostId,snapshot.cliProtocolVersion ?? null,
          snapshot.purpose ?? 'screen',snapshot.authorizationGrantId ?? null,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch]);
-      return result.rows[0] ? mapSession(result.rows[0]) : undefined;
+      const current=result.rows[0] ? mapSession(result.rows[0]) : undefined;
+      if(current && (current.purpose==='access-code' || snapshot.purpose==='access-code')) this.assertCodeSnapshot(snapshot,current);
+      return current;
     });
+  }
+
+  private assertCodeSnapshot(snapshot:RemoteSession,current:RemoteSession):void {
+    const fields=['purpose','hostId','controllerDeviceId','controllerKind','scope','protocolVersion','authorizationGrantId','hostEndpointId','cliProtocolVersion','cliChatProtocolVersion'] as const;
+    if(fields.some(field=>snapshot[field]!==current[field]) ||
+      JSON.stringify([...snapshot.capabilities].sort())!==JSON.stringify([...current.capabilities].sort())) {
+      throw new ForbiddenException('Access code authority changed during installation');
+    }
+  }
+
+  private async validateCodeAuthority(purpose:RemoteSession['purpose'],validateAuthority?:()=>Promise<boolean>):Promise<void> {
+    if(purpose==='access-code' && (!validateAuthority || !await validateAuthority())) {
+      throw new ForbiddenException('Access code mode or endpoint is no longer active');
+    }
   }
 
   async listOwned(ownerAccountId: string): Promise<RemoteSession[]> {
