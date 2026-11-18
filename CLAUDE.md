@@ -52,7 +52,7 @@ UUID Redis prefixes. Do not apply migration6 to dev/production during coding.
 
 ## Android Control1
 
-Canonical execution plan: `../.idea/SYNC_ANDROID_REMOTE_CONTROL_PLAN.md`; API contract:
+Canonical execution plan: `../.idea/completed/SYNC_ANDROID_REMOTE_CONTROL_PLAN.md`; API contract:
 `docs/android-control.md`. Base2/eight capabilities unchanged. Optional version1
 belongs only on ticket/connect/live device/immutable control session, never stored
 registration/capability metadata. input-host is a host-role check, not controller
