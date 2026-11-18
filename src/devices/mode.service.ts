@@ -7,7 +7,7 @@ import { RedisService } from '../redis/redis.service';
 import { RemoteSessionService } from '../sessions/remote-session.service';
 import { Device } from './device.repository';
 
-export interface AccessMode { epoch: string; expiresAt: string; allowBrowser: boolean }
+export interface AccessMode { epoch: string; expiresAt: string; allowBrowser: boolean; allowControl: boolean }
 interface StoredMode extends AccessMode { hostId: string; ownerAccountId: string; codeHash: string }
 
 @Injectable()
@@ -18,9 +18,10 @@ export class ModeService {
     private readonly sessions: RemoteSessionService,
   ) {}
 
-  async set(account: Account, host: Device, input: { enabled: boolean; allowBrowser: boolean; ttlSeconds?: number }): Promise<{ mode: AccessMode | null; code?: string }> {
+  async set(account: Account, host: Device, input: { enabled: boolean; allowBrowser: boolean; allowControl?: boolean; ttlSeconds?: number }): Promise<{ mode: AccessMode | null; code?: string }> {
     this.assertConfigured();
     if (input.allowBrowser && host.platform !== 'macos' && host.platform !== 'windows') throw new BadRequestException('Browser access is desktop-only');
+    if (input.allowControl && host.platform !== 'android') throw new BadRequestException('Remote input mode is Android-only');
     if (!input.enabled) {
       await this.redis.client.del(this.modeKey(host.id));
       await this.sessions.endForHost(host.id, 'mode_disabled');
@@ -31,7 +32,7 @@ export class ModeService {
     const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     const epoch = randomUUID();
     const stored: StoredMode = {
-      hostId: host.id, ownerAccountId: account.id, epoch, allowBrowser: input.allowBrowser,
+      hostId: host.id, ownerAccountId: account.id, epoch, allowBrowser: input.allowBrowser, allowControl: input.allowControl===true,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
       codeHash: this.codeHash(host.id, epoch, code),
     };
@@ -80,6 +81,7 @@ export class ModeService {
     const raw = await this.redis.client.get(this.modeKey(hostId));
     if (!raw) return undefined;
     const mode = JSON.parse(raw) as StoredMode;
+    mode.allowControl=mode.allowControl===true;
     if (Date.parse(mode.expiresAt) <= Date.now()) { await this.redis.client.del(this.modeKey(hostId)); return undefined; }
     return mode;
   }
@@ -92,4 +94,4 @@ export class ModeService {
   private modeKey(hostId: string): string { return this.redis.key('mode', hostId); }
 }
 
-function publicMode(mode: StoredMode): AccessMode { return { epoch: mode.epoch, expiresAt: mode.expiresAt, allowBrowser: mode.allowBrowser }; }
+function publicMode(mode: StoredMode): AccessMode { return { epoch: mode.epoch, expiresAt: mode.expiresAt, allowBrowser: mode.allowBrowser, allowControl: mode.allowControl===true }; }

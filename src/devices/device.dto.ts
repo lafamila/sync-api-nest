@@ -68,6 +68,10 @@ export class RegisterDeviceDto extends DeviceMetadataDto {
 }
 
 export class SetModeDto extends DeviceProofDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsBoolean()
+  allowControl?: boolean;
+
   @IsBoolean()
   enabled!: boolean;
 
@@ -83,11 +87,20 @@ export class SetModeDto extends DeviceProofDto {
 }
 
 export class ApproveGrantDto extends DeviceProofDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsIn(['view', 'control'])
+  scope?: 'view' | 'control';
+
   @IsUUID()
   controllerDeviceId!: string;
 }
 
 export class ConnectDeviceDto extends EndpointMetadataDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsInt()
+  @IsIn([SYNC_LIMITS.androidControlProtocolVersion])
+  androidControlProtocolVersion?: number;
+
   @ValidateIf((_value, value) => value !== undefined)
   @IsInt()
   @IsIn([SYNC_LIMITS.cliChatProtocolVersion])
@@ -142,6 +155,11 @@ export class CapabilityUpdateDto extends DeviceMetadataDto {
 }
 
 export class DeviceTicketDto extends EndpointMetadataDto {
+  @ValidateIf((_value, value) => value !== undefined)
+  @IsInt()
+  @IsIn([SYNC_LIMITS.androidControlProtocolVersion])
+  androidControlProtocolVersion?: number;
+
   @ValidateIf((_value, value) => value !== undefined)
   @IsInt()
   @IsIn([SYNC_LIMITS.cliChatProtocolVersion])

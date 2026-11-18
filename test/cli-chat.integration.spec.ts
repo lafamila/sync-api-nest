@@ -111,7 +111,7 @@ integration('CLI chat isolated sync_test schema and Redis prefix',()=>{
     expect(names.rows.map(row=>row.tablename)).toEqual(['sync_access_events','sync_auth_sessions','sync_device_grants',
       'sync_devices','sync_remote_sessions','sync_schema_migrations']);
     expect((await db.query('show search_path')).rows[0]!.search_path).toBe(schema);
-    expect((await db.query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(6);
+    expect((await db.query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(7);
   });
 
   it('applies migration5 twice to populated v4 without changing rows or unique-host policy',async()=>{

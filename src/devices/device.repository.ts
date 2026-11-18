@@ -86,15 +86,21 @@ export class DeviceRepository {
     return result.rows[0] ? mapGrant(result.rows[0]) : undefined;
   }
 
-  async rememberGrant(ownerAccountId: string, hostId: string, controllerId: string, scope: 'view' | 'control'): Promise<DeviceGrant> {
-    const result = await this.db.query<GrantRow>(
-      `insert into sync_device_grants(id,owner_account_id,host_device_id,controller_device_id,scope)
-       values($1,$2,$3,$4,$5)
-       on conflict(host_device_id,controller_device_id) do update set
-         owner_account_id=excluded.owner_account_id, scope=excluded.scope, revoked_at=null, created_at=now()
-       returning *`, [randomUUID(), ownerAccountId, hostId, controllerId, scope],
-    );
-    return mapGrant(result.rows[0]!);
+  async rememberGrant(ownerAccountId: string, hostId: string, controllerId: string, scope: 'view' | 'control'): Promise<DeviceGrant & { endedSessionIds:string[] }> {
+    return this.db.transaction(async(query)=>{
+      const previous=await query<GrantRow>(`select * from sync_device_grants where host_device_id=$1 and controller_device_id=$2 for update`,[hostId,controllerId]);
+      const result = await query<GrantRow>(
+        `insert into sync_device_grants(id,owner_account_id,host_device_id,controller_device_id,scope)
+         values($1,$2,$3,$4,$5)
+         on conflict(host_device_id,controller_device_id) do update set
+           owner_account_id=excluded.owner_account_id, scope=excluded.scope, revoked_at=null, created_at=now()
+         returning *`, [randomUUID(), ownerAccountId, hostId, controllerId, scope],
+      );
+      const changed=!previous.rows[0] || previous.rows[0].scope!==scope || previous.rows[0].revoked_at!==null;
+      const ended=changed?await query<{id:string}>(`update sync_remote_sessions set ended_at=clock_timestamp(),end_reason='grant_scope_changed',
+        recovery_consumed=true,activity_token_hash=null where host_device_id=$1 and controller_device_id=$2 and ended_at is null returning id`,[hostId,controllerId]):undefined;
+      return {...mapGrant(result.rows[0]!),endedSessionIds:ended?.rows.map(row=>row.id) ?? []};
+    });
   }
 
   async listGrants(ownerAccountId: string, hostId: string): Promise<DeviceGrant[]> {

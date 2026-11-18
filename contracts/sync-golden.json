@@ -1,5 +1,5 @@
 {
-  "schemaHash": "2951454e5a7a6babf4b6f82d3c4a35073430e66600db1b3981f097484ddfbc09",
+  "schemaHash": "41b412cff02d6887ae1491b2a6490f7be03ad8fe02567526376c98575b0bb03a",
   "description": "Public interoperable fixtures only. Never use this deterministic test key or nonce for authentication.",
   "proofs": {
     "testOnly": true,
@@ -29,7 +29,94 @@
       "line break"
     ]
   },
+  "androidControlChannelCases": [
+    {
+      "name": "android-control-reliable",
+      "hostPlatform": "android",
+      "scope": "control",
+      "purpose": "screen",
+      "androidControlProtocolVersion": 1,
+      "channel": "reliable",
+      "id": 4,
+      "negotiated": true,
+      "ordered": true,
+      "maxRetransmits": -1,
+      "maxPacketLifeTime": -1
+    },
+    {
+      "name": "android-control-motion",
+      "hostPlatform": "android",
+      "scope": "control",
+      "purpose": "screen",
+      "androidControlProtocolVersion": 1,
+      "channel": "motion",
+      "id": 6,
+      "negotiated": true,
+      "ordered": false,
+      "maxRetransmits": 0,
+      "maxPacketLifeTime": -1
+    }
+  ],
   "valid": [
+    {
+      "name": "android-control-version",
+      "model": "WireRemoteSession",
+      "value": {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "hostId": "22222222-2222-4222-8222-222222222222",
+        "scope": "control",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "expiresAt": "2030-01-01T00:00:00Z",
+        "protocolVersion": 2,
+        "capabilities": [
+          "input-host"
+        ],
+        "androidControlProtocolVersion": 1
+      }
+    },
+    {
+      "name": "android-back",
+      "model": "WireInput",
+      "value": {
+        "type": "key",
+        "seq": 1,
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "key": "AndroidBack",
+        "down": true
+      }
+    },
+    {
+      "name": "android-home",
+      "model": "WireInput",
+      "value": {
+        "type": "key",
+        "seq": 2,
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "key": "AndroidHome",
+        "down": true
+      }
+    },
+    {
+      "name": "android-recents",
+      "model": "WireInput",
+      "value": {
+        "type": "key",
+        "seq": 3,
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "key": "AndroidRecents",
+        "down": true
+      }
+    },
+    {
+      "name": "android-control-mode",
+      "model": "WireMode",
+      "value": {
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "expiresAt": "2030-01-01T00:00:00Z",
+        "allowBrowser": false,
+        "allowControl": true
+      }
+    },
     {
       "name": "access-code-request",
       "model": "WireAccessCodeFrame",
@@ -1726,6 +1813,29 @@
     }
   ],
   "invalid": [
+    {
+      "name": "android-control-unsupported-version",
+      "model": "WireDevice",
+      "value": {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "name": "Android",
+        "platform": "android",
+        "online": true,
+        "androidControlProtocolVersion": 2
+      }
+    },
+    {
+      "name": "android-control-null-version",
+      "model": "WireRemoteSession",
+      "value": {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "hostId": "22222222-2222-4222-8222-222222222222",
+        "scope": "control",
+        "epoch": "33333333-3333-4333-8333-333333333333",
+        "expiresAt": "2030-01-01T00:00:00Z",
+        "androidControlProtocolVersion": null
+      }
+    },
     {
       "name": "access-code-request-payload",
       "model": "WireAccessCodeFrame",

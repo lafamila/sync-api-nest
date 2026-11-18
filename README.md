@@ -43,7 +43,7 @@ Use one stable LAN address for the controller browser, callback, and TURN. HTTP 
 ```bash
 npm run typecheck
 npm test
-npm run test:integration # dedicated sync_test DB and sync:test:<fixture> Redis prefix
+SYNC_ANDROID_CONTROL_DB_SLOT=approved npm run test:integration # only after leader DB-slot grant; fresh schemas/prefixes
 npm run test:system      # compiled API + fixture OIDC + production SPA + Chrome WebRTC/TURN
 npm run build
 npm run build:web
@@ -60,6 +60,11 @@ SYNC_CLI_CHAT_DB_SLOT=approved node --env-file-if-exists=.env scripts/test-cli-c
 
 ## HTTP contract
 
+[Android Remote Control1](docs/android-control.md) adds optional version1 ticket/connect
+declarations, explicit Android control grants and default-OFF `allowControl` mode.
+Only fresh native Android screen-control snapshots gain this version; iOS remains
+view-only. Migration7 is additive and has not been applied to dev/production.
+
 Trusted native code lookup is documented in [Trusted Access Code](docs/access-code.md).
 The additive `access-code` capability/purpose uses data-only encrypted peer frames,
 not a code-retrieval HTTP/WSS endpoint. Migration6 preserves ordinary host session
@@ -73,7 +78,7 @@ rows. Opted responses expose the new catalog/rows. These GETs use
 `Vary: X-Sync-Extensions` and `Cache-Control: no-store`. The header never grants trust or
 changes registration/ticket/connect authorization; old servers ignore it.
 
-Native mobile CLI list/send, separately negotiated CLI Chat1, additive migrations4/5 and signed public profiles are documented in [CLI sessions](docs/cli-sessions.md). These optional extensions do not enable browser/PIN CLI or add a service/env key. The isolated chat runner refuses non-loopback/non-`sync_test` targets, installs/migrates only a fresh schema, cleans only that schema and its UUID Redis prefix, and never runs the legacy public-truncate integration suite. Do not run that legacy suite against a shared test schema.
+Native mobile CLI list/send, separately negotiated CLI Chat1, additive migrations4/5 and signed public profiles are documented in [CLI sessions](docs/cli-sessions.md). These optional extensions do not enable browser/PIN CLI or add a service/env key. All integration suites now use the full isolated runner: it refuses non-loopback/non-`sync_test` targets, installs/migrates only fresh schemas, cleans only those schemas and UUID Redis prefixes, and has no public-schema truncation path.
 
 All routes use `/api`. Browser auth uses the HttpOnly `sync_session` cookie and a strict `sync_csrf` double-submit cookie on mutations. Native clients send only their opaque value in `X-Sync-Session`. Device-changing native operations additionally require a one-use P-256 proof.
 
@@ -104,7 +109,7 @@ sync:device:<deviceId>:<challengeId>:<nonce>
 
 Device deletion separates actor from target: any active device owned by the session account may sign the deletion request, and the target is independently checked against that same owner. This permits removing a lost device without its private key. A revoked actor and a cross-account target are rejected. Permanent grant approval remains stricter and always requires the target host's own proof.
 
-Enabling or reissuing mode creates a new UUID epoch and six-digit PIN. PIN HMACs, account+host+epoch failures, IP failures, and lockout are updated atomically in Redis. Five account failures invalidate the mode. `allowBrowser` gates every untrusted temporary connection, not a client-supplied platform label: browsers also require allowed Origin and CSRF, while proof-bearing but unapproved controllers remain untrusted and still need the current PIN. Only macOS/Windows hosts with `allowBrowser=true` accept temporary PIN connections. A trusted native connection requires an existing host-approved grant and controller proof. PIN-based connections are always temporary: `rememberDevice` is rejected and can never create trust. A host explicitly approves a registered controller with `POST /api/devices/:hostId/grants` using the host private-key proof. iOS/Android hosts are view-only and require an existing grant. A partial PostgreSQL unique index enforces one active controller per host; one controller may connect to multiple distinct hosts. Connection creation rechecks the mode epoch after persistence; a concurrent mode change ends the row before any ticket is issued.
+Enabling or reissuing mode creates a new UUID epoch and six-digit PIN. PIN HMACs, account+host+epoch failures, IP failures, and lockout are updated atomically in Redis. Five account failures invalidate the mode. `allowBrowser` gates every untrusted temporary connection, not a client-supplied platform label: browsers also require allowed Origin and CSRF, while proof-bearing but unapproved controllers remain untrusted and still need the current PIN. Only macOS/Windows hosts with `allowBrowser=true` accept temporary PIN connections. A trusted native connection requires an existing host-approved grant and controller proof. PIN-based connections are always temporary: `rememberDevice` is rejected and can never create trust. A host explicitly approves a registered controller with `POST /api/devices/:hostId/grants` using the host private-key proof. iOS hosts are view-only; Android is view-only unless explicit control scope, allowControl mode and fresh AndroidControl1 live-endpoint negotiation all succeed. Neither mobile host accepts PIN. A partial PostgreSQL unique index enforces one active screen/CLI controller per host; one controller may connect to multiple distinct hosts. Connection creation rechecks the mode epoch after persistence; a concurrent mode change ends the row before any ticket is issued.
 
 Protocol2 is additive: native registration/tickets declare active capabilities, while omitted native version/capabilities retain protocol1/empty defaults. Session features are immutable snapshots; changing device metadata cannot upgrade an existing connection. Browser connect/recovery must declare version2, even when the negotiated media remains1. Missing browser declarations return HTTP426 `reload-required`. Flat `/api/config` publishes mode duration bounds, web idle policy and feature flags. Canonical types, validators and fixtures live in `contracts/`; run the shared generator rather than editing generated outputs. See `../.docs/SYNC_PROTOCOL_V2.md` and `../.docs/SYNC_CI.md`.
 

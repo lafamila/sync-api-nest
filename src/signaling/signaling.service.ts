@@ -139,7 +139,7 @@ export class SignalingService implements OnModuleDestroy {
           !this.snapshotRevoked(ended,connection,session),()=>this.modeMatches(session));
         if(!this.isCurrent(connection)) return;
         if(!resumed || this.snapshotRevoked(ended,connection,resumed)) continue;
-        if(resumed.purpose==='access-code' && !await this.modeMatches(resumed)) {
+        if((resumed.purpose==='access-code' || resumed.androidControlProtocolVersion!==undefined) && !await this.modeMatches(resumed)) {
           await this.sessions.endIfActive(resumed.ownerAccountId,resumed.id,'mode_invalid');continue;
         }
         if(!this.isCurrent(connection) || this.snapshotRevoked(ended,connection,resumed)) continue;
@@ -161,7 +161,7 @@ export class SignalingService implements OnModuleDestroy {
       await this.authSessions.revalidateById(ticket.authSessionId);
       const session=await this.sessions.findActive(ticket.sessionId);
       if(!session || session.ownerAccountId!==ticket.ownerAccountId || session.authSessionId!==ticket.authSessionId) throw new Error('session invalid');
-      if(session.purpose==='access-code' && ticket.browser) throw new Error('native controller required');
+      if((session.purpose==='access-code' || session.androidControlProtocolVersion!==undefined) && ticket.browser) throw new Error('native controller required');
       if(!await this.modeMatches(session)) { await this.sessions.endIfActive(session.ownerAccountId,session.id,'mode_invalid'); throw new Error('mode invalid'); }
       const activeHost=this.devices.get(session.hostId);
       if(!activeHost || !this.supportsHost(activeHost,session)) {
@@ -363,10 +363,20 @@ export class SignalingService implements OnModuleDestroy {
   private async modeMatches(session:RemoteSession):Promise<boolean> {
     const mode=await this.modes.get(session.ownerAccountId,session.hostId);
     return Boolean(mode && mode.epoch===session.epoch &&
+      (session.androidControlProtocolVersion===undefined || mode.allowControl===true) &&
       ((session.controllerKind!=='browser' && session.purpose!=='access-code') || mode.allowBrowser));
   }
   private supportsHost(connection:Connection,session:RemoteSession):boolean {
     if(connection.ticket.role!=='device' || !supportsSession(endpointFeatures(connection.ticket),session,this.config.config.requireBoundedHosts)) return false;
+    if(session.androidControlProtocolVersion!==undefined) return session.androidControlProtocolVersion===1 && session.protocolVersion>=2 &&
+      (session.purpose ?? 'screen')==='screen' && session.capabilities.includes('input-host') && !session.capabilities.includes('access-code') &&
+      session.cliProtocolVersion===undefined && session.cliChatProtocolVersion===undefined &&
+      session.hostEndpointId===connection.id && connection.ticket.platform==='android' &&
+      connection.ticket.deviceId===session.hostId && connection.ticket.ownerAccountId===session.ownerAccountId &&
+      session.controllerKind==='native' && session.scope==='control' &&
+      Boolean(session.controllerDeviceId && session.controllerDeviceId!==session.hostId && session.authorizationGrantId);
+    if(connection.ticket.platform==='ios' && session.scope==='control') return false;
+    if(connection.ticket.platform==='android' && session.scope==='control') return false;
     if(session.purpose==='access-code') return session.protocolVersion>=2 && session.capabilities.includes('access-code') &&
       session.capabilities.every(capability=>capability==='access-code' || capability==='bounded-lifetime') &&
       session.cliProtocolVersion===undefined && session.cliChatProtocolVersion===undefined &&

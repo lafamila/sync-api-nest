@@ -22,7 +22,7 @@
     "test:contracts": "node --test scripts/generate-contracts.test.mjs",
     "test:dev-proxy": "node --test scripts/dev-auth-lan.test.mjs",
     "test:turn-config": "node --test scripts/prepare-turn.test.mjs",
-    "test:integration": "SYNC_INTEGRATION_TESTS=1 jest --runInBand test/integration.spec.ts",
+    "test:integration": "node --env-file-if-exists=.env scripts/test-android-control-isolated.mjs",
     "test:system": "npm run build:all && node test/system/sync-system.mjs"
   },
   "dependencies": {

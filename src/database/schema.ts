@@ -166,4 +166,19 @@ do $$ begin
     insert into sync_schema_migrations(version) values(6);
   end if;
 end $$;
+
+do $$ begin
+  if not exists(select 1 from sync_schema_migrations where version=7) then
+    alter table sync_remote_sessions add column android_control_protocol_version integer;
+    alter table sync_remote_sessions add constraint sync_android_control_session_consistency check(
+      android_control_protocol_version is null or (android_control_protocol_version=1 and protocol_version>=2
+        and purpose='screen' and controller_kind='native' and scope='control'
+        and controller_device_id is not null and controller_device_id<>host_device_id
+        and authorization_grant_id is not null and host_endpoint_id is not null
+        and cli_protocol_version is null and cli_chat_protocol_version is null
+        and jsonb_typeof(capabilities)='array' and capabilities @> '["input-host"]'::jsonb
+        and not (capabilities @> '["access-code"]'::jsonb)));
+    insert into sync_schema_migrations(version) values(7);
+  end if;
+end $$;
 `;

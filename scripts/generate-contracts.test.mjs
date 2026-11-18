@@ -387,11 +387,25 @@ test('access-code strict variants, capability and serialized byte limits are loc
   for(const expiresAt of ['not-a-date','2026-11-06',null]) assert.equal(wire.validateWire('WireAccessCodeFrame',{...result,expiresAt}),false);
 });
 
+test('AndroidControl1 uses locally-created externally negotiated exact channels without changing legacy catalogs',()=>{
+  assert.equal(wire.SYNC_PROTOCOL_VERSION,2);assert.equal(wire.SYNC_CAPABILITIES.length,8);
+  assert.equal(wire.SYNC_LIMITS.androidControlReliableChannelId,4);
+  assert.equal(wire.SYNC_LIMITS.androidControlMotionChannelId,6);
+  for(const fixture of fixtures.androidControlChannelCases) {
+    assert.equal(fixture.hostPlatform,'android');assert.equal(fixture.scope,'control');
+    assert.equal(fixture.purpose,'screen');assert.equal(fixture.androidControlProtocolVersion,1);
+    const {id,negotiated,ordered,maxRetransmits,maxPacketLifeTime}=fixture;
+    assert.deepEqual({id,negotiated,ordered,maxRetransmits,maxPacketLifeTime},contract['x-sync'].androidControlChannels[fixture.channel]);
+  }
+  const changed=structuredClone(contract);changed['x-sync'].androidControlChannels.reliable.negotiated=false;
+  assert.throws(()=>checkSchema(changed),/Android control channel contract drift/);
+});
+
 test('generated TS passes actual strict compiler (including literal-union arrays)', () => {
   execFileSync(process.execPath,[require.resolve('typescript/bin/tsc'),'--noEmit','--strict','--skipLibCheck','--target','ES2022','--moduleResolution','node',resolve(api,'src/generated/sync-wire.ts')],{ cwd:api,stdio:'pipe' });
 });
 
-test('Swift generated models compile and execute shared fixtures/defaults/proof builders', { skip:process.platform !== 'darwin' }, async t => {
+test('Swift generated models compile and execute shared fixtures/defaults/proof builders', { skip:process.platform !== 'darwin' || process.env.SYNC_CONTRACT_SKIP_NATIVE_COMPILERS==='1' }, async t => {
   const root = await mkdtemp(resolve(tmpdir(),'sync-wire-swift-'));
   t.after(()=>rm(root,{ recursive:true,force:true }));
   const main = resolve(root,'main.swift');
@@ -499,7 +513,7 @@ print("Swift contract fixtures/defaults/proofs/UTF8 passed")
   } catch (error) { throw new Error(`${error.message}\n${error.stderr?.toString() ?? ''}`); }
 });
 
-test('C# generated models compile offline and round-trip fixtures/defaults without null command fields', async t => {
+test('C# generated models compile offline and round-trip fixtures/defaults without null command fields', {skip:process.env.SYNC_CONTRACT_SKIP_NATIVE_COMPILERS==='1'}, async t => {
   const sdkRoot = process.env.DOTNET_ROOT ?? resolve(workspace,'.tools/dotnet-10.0.114');
   const dotnet = resolve(sdkRoot,process.platform === 'win32' ? 'dotnet.exe' : 'dotnet');
   if (!existsSync(dotnet)) return t.skip('No existing .NET SDK; no dependencies are installed by contract tests');
@@ -564,7 +578,7 @@ static class Program {
   } catch(error) { throw new Error(`${error.message}\n${error.stdout?.toString() ?? ''}\n${error.stderr?.toString() ?? ''}`); }
 });
 
-test('Kotlin generated models compile offline and decode shared fixtures/defaults using cached compiler', async t => {
+test('Kotlin generated models compile offline and decode shared fixtures/defaults using cached compiler', {skip:process.env.SYNC_CONTRACT_SKIP_NATIVE_COMPILERS==='1'}, async t => {
   const cache = resolve(process.env.GRADLE_USER_HOME ?? resolve(homedir(),'.gradle'),'caches/modules-2/files-2.1');
   const cachedJar = (group,name,version) => {
     const path = resolve(cache,group,name,version);

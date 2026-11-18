@@ -8,7 +8,7 @@ interface SessionRow {
   controller_kind: 'browser' | 'native'; scope: 'view' | 'control'; mode_epoch: string; auth_session_id: string;
   runtime_namespace:string; signaling_instance_id:string;
   protocol_version:number; capabilities:string[]; host_endpoint_id:string|null;
-  purpose:'screen'|'cli'|'access-code'; cli_protocol_version:number|null; cli_chat_protocol_version:number|null;
+  purpose:'screen'|'cli'|'access-code'; cli_protocol_version:number|null; cli_chat_protocol_version:number|null; android_control_protocol_version:number|null;
   activity_token_hash:string|null; last_activity_at:Date|null; idle_deadline:Date|null; recovery_consumed:boolean;
   authorization_grant_id:string|null; connection_deadline:Date|null; connected_at:Date|null;
   created_at: Date; expires_at: Date; ended_at: Date | null; end_reason: string | null;
@@ -20,7 +20,7 @@ export interface RemoteSession {
   authSessionId: string; createdAt: string; expiresAt: string; endedAt: string | null; endReason: string | null;
   runtimeNamespace:string; signalingInstanceId:string;
   protocolVersion:number; capabilities:string[]; hostEndpointId:string|null;
-  purpose?:'screen'|'cli'|'access-code'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
+  purpose?:'screen'|'cli'|'access-code'; cliProtocolVersion?:number; cliChatProtocolVersion?:number; androidControlProtocolVersion?:number;
   lastActivityAt:string|null; idleDeadline:string|null;
   authorizationGrantId?:string|null; connectionDeadline?:string|null; connectedAt?:string|null;
 }
@@ -31,7 +31,7 @@ export interface CreateSessionInput {
   runtimeNamespace:string; signalingInstanceId:string; protocolVersion?:number; capabilities?:string[];
   hostEndpointId?:string; activityTokenHash?:string; idleTimeoutSeconds?:number;
   authorizationGrantId?:string; connectionTimeoutSeconds?:number;
-  purpose?:'screen'|'cli'|'access-code'; cliProtocolVersion?:number; cliChatProtocolVersion?:number;
+  purpose?:'screen'|'cli'|'access-code'; cliProtocolVersion?:number; cliChatProtocolVersion?:number; androidControlProtocolVersion?:number;
 }
 
 const RECOVERABLE_REASONS = ['controller_disconnected','device_disconnected','server_shutdown','server_restarted'];
@@ -46,27 +46,35 @@ export class RemoteSessionRepository {
   async create(input: CreateSessionInput, query?:Query, continuity?:SessionRow, validateAuthority?:()=>Promise<boolean>): Promise<RemoteSession> {
     if (!query) return this.db.transaction((transaction) => this.create(input,transaction,continuity,validateAuthority));
     await this.lockAuthorization(query,input);
-    await this.validateCodeAuthority(input.purpose,validateAuthority);
+    await this.validateLiveAuthority(input,validateAuthority);
     const id = randomUUID();
     const result = await query<SessionRow>(
       `insert into sync_remote_sessions(id,owner_account_id,host_device_id,controller_device_id,controller_kind,scope,mode_epoch,auth_session_id,expires_at,runtime_namespace,signaling_instance_id,
-       protocol_version,capabilities,host_endpoint_id,activity_token_hash,last_activity_at,idle_deadline,authorization_grant_id,connection_deadline,purpose,cli_protocol_version,cli_chat_protocol_version)
+       protocol_version,capabilities,host_endpoint_id,activity_token_hash,last_activity_at,idle_deadline,authorization_grant_id,connection_deadline,purpose,cli_protocol_version,cli_chat_protocol_version,android_control_protocol_version)
        select $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,
          case when $5='browser' then coalesce($16::timestamptz,clock_timestamp()) end,
          case when $5='browser' then coalesce($17::timestamptz,least($9,clock_timestamp()+($18 * interval '1 second'))) end,
-         $19,case when $20::integer is not null then least($9,clock_timestamp()+($20 * interval '1 second')) end,$21,$22,$23
+         $19,case when $20::integer is not null then least($9,clock_timestamp()+($20 * interval '1 second')) end,$21,$22,$23,$24
        where exists(select 1 from sync_auth_sessions where id=$8 and expires_at>clock_timestamp()) returning *`,
       [id,input.ownerAccountId,input.hostId,input.controllerDeviceId ?? null,input.controllerKind,input.scope,input.epoch,input.authSessionId,input.expiresAt,
        input.runtimeNamespace,input.signalingInstanceId,input.protocolVersion ?? 1,JSON.stringify(input.capabilities ?? []),
        input.hostEndpointId ?? null,input.activityTokenHash ?? null,continuity?.last_activity_at ?? null,
        continuity?.idle_deadline ?? null,input.idleTimeoutSeconds ?? 900,input.authorizationGrantId ?? null,input.connectionTimeoutSeconds ?? null,
-       input.purpose ?? 'screen',input.cliProtocolVersion ?? null,input.cliChatProtocolVersion ?? null],
+       input.purpose ?? 'screen',input.cliProtocolVersion ?? null,input.cliChatProtocolVersion ?? null,input.androidControlProtocolVersion ?? null],
     );
     if(!result.rows[0]) throw new ForbiddenException('Local authentication session expired');
     return mapSession(result.rows[0]);
   }
 
-  private async lockAuthorization(query:Query,input:Pick<CreateSessionInput,'ownerAccountId'|'authSessionId'|'controllerKind'|'hostId'|'controllerDeviceId'|'authorizationGrantId'|'scope'|'purpose'|'cliProtocolVersion'|'cliChatProtocolVersion'|'protocolVersion'|'hostEndpointId'|'capabilities'>):Promise<void> {
+  private async lockAuthorization(query:Query,input:Pick<CreateSessionInput,'ownerAccountId'|'authSessionId'|'controllerKind'|'hostId'|'controllerDeviceId'|'authorizationGrantId'|'scope'|'purpose'|'cliProtocolVersion'|'cliChatProtocolVersion'|'androidControlProtocolVersion'|'protocolVersion'|'hostEndpointId'|'capabilities'>):Promise<void> {
+    const android=input.androidControlProtocolVersion!==undefined;
+    if(android && (input.androidControlProtocolVersion!==1 || (input.protocolVersion ?? 1)<2 ||
+      (input.purpose ?? 'screen')!=='screen' || input.controllerKind!=='native' || input.scope!=='control' ||
+      !input.controllerDeviceId || input.controllerDeviceId===input.hostId || !input.authorizationGrantId || !input.hostEndpointId ||
+      input.cliProtocolVersion!==undefined || input.cliChatProtocolVersion!==undefined ||
+      !input.capabilities?.includes('input-host') || input.capabilities.includes('access-code'))) {
+      throw new ForbiddenException('Android control requires isolated trusted native control');
+    }
     const accessCode=input.purpose==='access-code';
     if(accessCode && ((input.protocolVersion ?? 1)<2 || input.controllerKind!=='native' || input.scope!=='control' ||
       !input.controllerDeviceId || input.controllerDeviceId===input.hostId || !input.authorizationGrantId || !input.hostEndpointId ||
@@ -86,9 +94,12 @@ export class RemoteSessionRepository {
     if(!auth.rowCount) throw new ForbiddenException('Local authentication session is no longer active');
     const ids=[...new Set([input.hostId,...(input.controllerDeviceId?[input.controllerDeviceId]:[])])].sort();
     // Revocation updates devices before grants. Hold compatible read locks through INSERT/install.
-    const participants=await query(`select id from sync_devices where owner_account_id=$1 and id=any($2::uuid[])
+    const participants=await query(`select id,platform from sync_devices where owner_account_id=$1 and id=any($2::uuid[])
       and revoked_at is null order by id for share`,[input.ownerAccountId,ids]);
     if(participants.rowCount!==ids.length) throw new ForbiddenException('Session participant was revoked');
+    const platform=participants.rows.find(row=>row.id===input.hostId)?.platform;
+    if((platform==='ios' && input.scope==='control') || (platform==='android' && input.scope==='control' && !android) ||
+      (android && platform!=='android')) throw new ForbiddenException('Host does not authorize this control protocol');
     if(cli && !(await query(`select 1 from sync_devices where id=$1 and platform='macos'`,[input.hostId])).rowCount) {
       throw new ForbiddenException('CLI sessions require a Mac host');
     }
@@ -113,21 +124,22 @@ export class RemoteSessionRepository {
         authSessionId:snapshot.authSessionId,controllerKind:snapshot.controllerKind,
         controllerDeviceId:snapshot.controllerDeviceId ?? undefined,scope:snapshot.scope,
         authorizationGrantId:snapshot.authorizationGrantId ?? undefined,purpose:snapshot.purpose,cliProtocolVersion:snapshot.cliProtocolVersion,
-        cliChatProtocolVersion:snapshot.cliChatProtocolVersion,
+        cliChatProtocolVersion:snapshot.cliChatProtocolVersion,androidControlProtocolVersion:snapshot.androidControlProtocolVersion,
         protocolVersion:snapshot.protocolVersion,hostEndpointId:snapshot.hostEndpointId ?? undefined,capabilities:snapshot.capabilities});
       await query(`select id from sync_remote_sessions where id=$1 for update`,[snapshot.id]);
-      await this.validateCodeAuthority(snapshot.purpose,validateAuthority);
+      await this.validateLiveAuthority(snapshot,validateAuthority);
       // Time is evaluated after the row lock, so a stale discovery snapshot cannot claim a reservation.
       const result=await query<SessionRow>(`update sync_remote_sessions set connected_at=coalesce(connected_at,clock_timestamp())
         where id=$1 and owner_account_id=$2 and auth_session_id=$3 and ${ACTIVE}
-        and ((cli_protocol_version is null and purpose<>'access-code') or (cli_protocol_version is not distinct from $4::integer and purpose=$5
+        and ((cli_protocol_version is null and purpose<>'access-code' and android_control_protocol_version is null) or (cli_protocol_version is not distinct from $4::integer and purpose=$5
           and authorization_grant_id=$6 and host_endpoint_id=$7))
         and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9
+        and android_control_protocol_version is not distinct from $10::integer
         and exists(select 1 from sync_auth_sessions where id=$3 and expires_at>clock_timestamp()) returning *`,
         [snapshot.id,snapshot.ownerAccountId,snapshot.authSessionId,snapshot.cliProtocolVersion ?? null,snapshot.purpose ?? 'screen',
-         snapshot.authorizationGrantId ?? null,snapshot.hostEndpointId,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch]);
+         snapshot.authorizationGrantId ?? null,snapshot.hostEndpointId,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch,snapshot.androidControlProtocolVersion ?? null]);
       const row=result.rows[0];
-      if(row && (row.purpose==='access-code' || snapshot.purpose==='access-code')) this.assertCodeSnapshot(snapshot,mapSession(row));
+      if(row && (row.purpose==='access-code' || snapshot.purpose==='access-code' || row.android_control_protocol_version!=null || snapshot.androidControlProtocolVersion!==undefined)) this.assertIsolatedSnapshot(snapshot,mapSession(row));
       if(!row || !install(mapSession(row))) throw new ForbiddenException('Session closed during controller installation');
       return mapSession(row);
     });
@@ -135,42 +147,43 @@ export class RemoteSessionRepository {
 
   async bindHostEndpoint(snapshot:RemoteSession,endpointId:string,isCurrent:()=>boolean,validateAuthority?:()=>Promise<boolean>):Promise<RemoteSession|undefined> {
     return this.db.transaction(async(query)=>{
-      if(snapshot.cliProtocolVersion!==undefined || snapshot.purpose==='cli' || snapshot.purpose==='access-code' || snapshot.cliChatProtocolVersion!==undefined) {
+      if(snapshot.cliProtocolVersion!==undefined || snapshot.purpose==='cli' || snapshot.purpose==='access-code' || snapshot.cliChatProtocolVersion!==undefined || snapshot.androidControlProtocolVersion!==undefined) {
         await this.lockAuthorization(query,{ownerAccountId:snapshot.ownerAccountId,hostId:snapshot.hostId,
           authSessionId:snapshot.authSessionId,controllerKind:snapshot.controllerKind,
           controllerDeviceId:snapshot.controllerDeviceId ?? undefined,scope:snapshot.scope,
           authorizationGrantId:snapshot.authorizationGrantId ?? undefined,purpose:snapshot.purpose,
-          cliProtocolVersion:snapshot.cliProtocolVersion,cliChatProtocolVersion:snapshot.cliChatProtocolVersion,protocolVersion:snapshot.protocolVersion,
+          cliProtocolVersion:snapshot.cliProtocolVersion,cliChatProtocolVersion:snapshot.cliChatProtocolVersion,androidControlProtocolVersion:snapshot.androidControlProtocolVersion,protocolVersion:snapshot.protocolVersion,
           hostEndpointId:snapshot.hostEndpointId ?? undefined,capabilities:snapshot.capabilities});
       }
       await query(`select id from sync_remote_sessions where id=$1 for update`,[snapshot.id]);
-      await this.validateCodeAuthority(snapshot.purpose,validateAuthority);
+      await this.validateLiveAuthority(snapshot,validateAuthority);
       // Adopt legacy/null bindings on resume; a superseded registration must never reclaim a newer endpoint.
       if(!isCurrent()) return undefined;
       const result=await query<SessionRow>(`update sync_remote_sessions set host_endpoint_id=$2
         where id=$1 and owner_account_id=$3 and host_device_id=$4 and ${ACTIVE}
-        and ((cli_protocol_version is null and purpose<>'access-code') or (host_endpoint_id=$2 and cli_protocol_version is not distinct from $5::integer
+        and ((cli_protocol_version is null and purpose<>'access-code' and android_control_protocol_version is null) or (host_endpoint_id=$2 and cli_protocol_version is not distinct from $5::integer
           and purpose=$6 and authorization_grant_id=$7))
-        and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9 returning *`,
+        and cli_chat_protocol_version is not distinct from $8::integer and mode_epoch=$9
+        and android_control_protocol_version is not distinct from $10::integer returning *`,
         [snapshot.id,endpointId,snapshot.ownerAccountId,snapshot.hostId,snapshot.cliProtocolVersion ?? null,
-         snapshot.purpose ?? 'screen',snapshot.authorizationGrantId ?? null,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch]);
+         snapshot.purpose ?? 'screen',snapshot.authorizationGrantId ?? null,snapshot.cliChatProtocolVersion ?? null,snapshot.epoch,snapshot.androidControlProtocolVersion ?? null]);
       const current=result.rows[0] ? mapSession(result.rows[0]) : undefined;
-      if(current && (current.purpose==='access-code' || snapshot.purpose==='access-code')) this.assertCodeSnapshot(snapshot,current);
+      if(current && (current.purpose==='access-code' || snapshot.purpose==='access-code' || current.androidControlProtocolVersion!==undefined || snapshot.androidControlProtocolVersion!==undefined)) this.assertIsolatedSnapshot(snapshot,current);
       return current;
     });
   }
 
-  private assertCodeSnapshot(snapshot:RemoteSession,current:RemoteSession):void {
-    const fields=['purpose','hostId','controllerDeviceId','controllerKind','scope','protocolVersion','authorizationGrantId','hostEndpointId','cliProtocolVersion','cliChatProtocolVersion'] as const;
+  private assertIsolatedSnapshot(snapshot:RemoteSession,current:RemoteSession):void {
+    const fields=['purpose','hostId','controllerDeviceId','controllerKind','scope','protocolVersion','authorizationGrantId','hostEndpointId','cliProtocolVersion','cliChatProtocolVersion','androidControlProtocolVersion'] as const;
     if(fields.some(field=>snapshot[field]!==current[field]) ||
       JSON.stringify([...snapshot.capabilities].sort())!==JSON.stringify([...current.capabilities].sort())) {
-      throw new ForbiddenException('Access code authority changed during installation');
+      throw new ForbiddenException('Isolated session authority changed during installation');
     }
   }
 
-  private async validateCodeAuthority(purpose:RemoteSession['purpose'],validateAuthority?:()=>Promise<boolean>):Promise<void> {
-    if(purpose==='access-code' && (!validateAuthority || !await validateAuthority())) {
-      throw new ForbiddenException('Access code mode or endpoint is no longer active');
+  private async validateLiveAuthority(session:Pick<RemoteSession,'purpose'|'androidControlProtocolVersion'>,validateAuthority?:()=>Promise<boolean>):Promise<void> {
+    if((session.purpose==='access-code' || session.androidControlProtocolVersion!==undefined) && (!validateAuthority || !await validateAuthority())) {
+      throw new ForbiddenException('Session mode or endpoint is no longer active');
     }
   }
 
@@ -263,6 +276,7 @@ function mapSession(row: SessionRow): RemoteSession {
     protocolVersion:row.protocol_version ?? 1,capabilities:row.capabilities ?? [],hostEndpointId:row.host_endpoint_id ?? null,
     purpose:row.purpose ?? 'screen',...(row.cli_protocol_version==null?{}:{cliProtocolVersion:row.cli_protocol_version}),
     ...(row.cli_chat_protocol_version==null?{}:{cliChatProtocolVersion:row.cli_chat_protocol_version}),
+    ...(row.android_control_protocol_version==null?{}:{androidControlProtocolVersion:row.android_control_protocol_version}),
     lastActivityAt:row.last_activity_at?.toISOString() ?? null,idleDeadline:row.idle_deadline?.toISOString() ?? null,
     authorizationGrantId:row.authorization_grant_id ?? null,connectionDeadline:row.connection_deadline?.toISOString() ?? null,
     connectedAt:row.connected_at?.toISOString() ?? null };

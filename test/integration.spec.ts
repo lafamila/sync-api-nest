@@ -5,7 +5,7 @@ import { WebSocket } from 'ws';
 import { SyncConfigService } from '../src/config/config.service';
 import { loadConfig } from '../src/config/app-config';
 import { DatabaseService, Query } from '../src/database/database.service';
-import { QueryResultRow } from 'pg';
+import { Pool, QueryResultRow } from 'pg';
 import { RedisService } from '../src/redis/redis.service';
 import { RevocationBusService } from '../src/common/revocation-bus.service';
 import { RemoteSessionRepository } from '../src/sessions/remote-session.repository';
@@ -31,14 +31,23 @@ import request from 'supertest';
 import { SessionGuard } from '../src/auth/session.guard';
 import { validateWire } from '../src/generated/sync-wire';
 
-const integration=process.env.SYNC_INTEGRATION_TESTS==='1' ? describe : describe.skip;
+const integration=process.env.SYNC_ISOLATED_INTEGRATION_TESTS==='1' ? describe : describe.skip;
 
 integration('PostgreSQL and Redis security integration', () => {
   const prefix=`sync:test:${randomUUID()}`;
+  const schema=`sync_full_${randomUUID().replace(/-/g,'')}`;
+  const database=new URL(process.env.SYNC_TEST_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5432/sync_test');
+  const redisUrl=new URL(process.env.SYNC_TEST_REDIS_URL ?? 'redis://127.0.0.1:6379');
+  if(decodeURIComponent(database.pathname.slice(1))!=='sync_test' || !['localhost','127.0.0.1','[::1]'].includes(database.hostname) ||
+    !['localhost','127.0.0.1','[::1]'].includes(redisUrl.hostname)) throw new Error('Integration requires loopback sync_test and Redis');
+  const administration=new URL(database);administration.searchParams.set('options','-c search_path=pg_catalog');
+  database.searchParams.set('options',`-c search_path=${schema}`);
+  const admin=new Pool({connectionString:administration.toString(),max:1,connectionTimeoutMillis:3000});
+  let created=false;
   const configService=new SyncConfigService(loadConfig({
     NODE_ENV:'test',
-    DATABASE_URL:process.env.SYNC_TEST_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5432/sync_test',
-    REDIS_URL:process.env.SYNC_TEST_REDIS_URL ?? 'redis://127.0.0.1:6379',
+    DATABASE_URL:database.toString(),
+    REDIS_URL:redisUrl.toString(),
     SYNC_REDIS_KEY_PREFIX:prefix,
     SYNC_PUBLIC_URL:'http://localhost:3053',
     SYNC_AUTH_ISSUER_URL:'http://localhost:3032', SYNC_AUTH_JWKS_URL:'http://localhost:3032/oauth/jwks',
@@ -47,7 +56,7 @@ integration('PostgreSQL and Redis security integration', () => {
   }));
   const testDatabaseName = decodeURIComponent(new URL(configService.config.databaseUrl).pathname.slice(1));
   if (testDatabaseName !== 'sync_test') {
-    throw new Error('Destructive integration fixtures require an isolated sync_test database');
+    throw new Error('Integration fixtures require an isolated sync_test schema');
   }
   const db=new DatabaseService(configService);
   const redis=new RedisService(configService);
@@ -63,13 +72,20 @@ integration('PostgreSQL and Redis security integration', () => {
   const account={id:'account-integration',name:'Integration Owner',permission:'member' as const};
 
   beforeAll(async()=>{
+    expect((await admin.query('select current_database() as name')).rows[0].name).toBe('sync_test');
+    await admin.query(`create schema ${schema}`);created=true;
+    expect((await db.query('select current_schema() as name')).rows[0]!.name).toBe(schema);
     await db.onModuleInit(); await redis.onModuleInit(); remoteSessions.onModuleInit();
-    await db.query(`truncate sync_access_events,sync_remote_sessions,sync_device_grants,sync_devices,sync_auth_sessions restart identity cascade`);
   });
   afterAll(async()=>{
-    await db.query(`truncate sync_access_events,sync_remote_sessions,sync_device_grants,sync_devices,sync_auth_sessions restart identity cascade`);
-    await removeFixtureKeys(redis,prefix); remoteSessions.onModuleDestroy();
-    await redis.onApplicationShutdown(); await db.onApplicationShutdown();
+    remoteSessions.onModuleDestroy();
+    try {
+      if(redis.client.status==='ready') { await removeFixtureKeys(redis,prefix);await redis.onApplicationShutdown(); }
+      else redis.client.disconnect();
+    } finally {
+      await db.onApplicationShutdown();
+      try { if(created) await admin.query(`drop schema ${schema} cascade`); } finally { await admin.end(); }
+    }
   });
 
   it.each(['ios','android','windows'] as const)('binds %s native completion to the initiating app verifier and consumes it once', async(platform)=>{
@@ -719,7 +735,7 @@ integration('PostgreSQL and Redis security integration', () => {
     await db.transaction(async(query)=>{
       await query(`select id from sync_devices where id=$1 for update`,[f.host.id]);
       connecting=f.service.connect(f.auth,f.host.id,f.input,'127.0.0.1').catch(error=>error);
-      await waitForBlockedQuery('select id from sync_devices where owner_account_id=$1%');
+      await waitForBlockedQuery('select id,platform from sync_devices where owner_account_id=$1%');
       await query('select pg_sleep(0.25)');
     });
     expect(await connecting).toBeInstanceOf(Error);
@@ -863,13 +879,13 @@ integration('PostgreSQL and Redis security integration', () => {
     }
   });
 
-  it('keeps mobile hosts view-only with no PIN and allows Windows desktop modes',async()=>{
+  it('keeps mobile PIN disabled and Android control opt-in off by default',async()=>{
     const owner={...account,id:`mobile-${randomUUID()}`};
     const android=await devices.create(owner.id,{name:'Android',platform:'android',publicKeyDer:Buffer.from('fixture')});
     expect(await modes.set(owner,android,{enabled:true,allowBrowser:false,ttlSeconds:300})).not.toHaveProperty('code');
     await expect(modes.set(owner,android,{enabled:true,allowBrowser:true})).rejects.toThrow('desktop-only');
     const f=await browserFixture();
-    await expect(f.service.connect({...f.auth,account:owner},android.id,{scope:'control',protocolVersion:2},'127.0.0.1')).rejects.toThrow('view-only');
+    await expect(f.service.connect({...f.auth,account:owner},android.id,{scope:'control',protocolVersion:2},'127.0.0.1')).rejects.toThrow('trusted native');
   });
 
   it('bounds login initiation per client before allocating transactions', async()=>{
@@ -1020,7 +1036,7 @@ integration('PostgreSQL and Redis security integration', () => {
     await createSession('other-session-list-owner',new Date(Date.now()+120_000));
     await remoteSessions.endOwned(owner.id,ended.id,'controller_disconnected');
     const controller=new RemoteSessionController(remoteSessions,proofs,{} as never);
-    const request={syncSession:{account:owner}} as never;
+    const request={headers:{},syncSession:{account:owner}} as never;
     expect((await controller.list(request)).sessions.map((session)=>session.id)).toEqual([active.id]);
 
     // Expiry must be filtered even before the maintenance sweep persists ended_at.

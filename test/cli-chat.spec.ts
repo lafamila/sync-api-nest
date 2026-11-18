@@ -164,6 +164,6 @@ describe('CLI chat repository snapshot fences without a DB',()=>{
       expect.arrayContaining([1,snapshot.epoch]));
     expect(await repository.bindHostEndpoint(snapshot,'endpoint',()=>true)).toBeUndefined();
     const update=query.mock.calls.filter(([sql])=>sql.includes('update sync_remote_sessions')).at(-1)!;
-    expect(update[1].slice(-2)).toEqual([1,snapshot.epoch]);
+    expect(update[1].slice(-3)).toEqual([1,snapshot.epoch,null]);
   });
 });

@@ -112,3 +112,20 @@ old-consumer rejection vectors. Contract tests compile and execute all fixtures
 through TS, Swift, Kotlin and C#, including round-trip omission of chat optionals.
 Public signed profile assets have a separate native-owned data schema and are not
 wire messages. See [CLI sessions](../docs/cli-sessions.md) for API rollout/security.
+
+## Android Control1
+
+Base2 and the eight-capability catalog are unchanged. Optional
+`androidControlProtocolVersion: 1` is live endpoint/session metadata; only signed
+ticket/connect requests may declare it, never registration/capability updates.
+`WireMode.allowControl` defaults false, and `features.androidControl` has no implicit
+support default. AndroidBack/AndroidHome/AndroidRecents are strictly peer input
+keys for negotiated native Android control, never desktop mappings. Runtime scope,
+host-role input-host, grant/mode/original endpoint checks remain mandatory; schema
+decoding alone grants no authority. See [Android control](../docs/android-control.md).
+AndroidControl1 uses externally negotiated channels created locally by BOTH peers:
+generated reliable ID4 (ordered, unlimited retransmits/lifetime) and motion ID6
+(unordered, maxRetransmits0, lifetime unset). Both set negotiated=true; never trust
+received DCEP reliability metadata. `x-sync.androidControlChannels` and golden
+`androidControlChannelCases` lock exact configs. Legacy screen/view/CLI/code channels
+are unchanged; there is no new capability or base/extension version bump.

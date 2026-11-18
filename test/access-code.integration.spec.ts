@@ -124,7 +124,7 @@ integration('access-code isolated DB authority, migrations and real lock races',
 
   it('confines all tables, migrations and keys to a fresh schema/prefix',async()=>{
     expect((await db.query('show search_path')).rows[0]!.search_path).toBe(schema);
-    expect((await db.query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(6);
+    expect((await db.query('select max(version) as version from sync_schema_migrations')).rows[0]!.version).toBe(7);
     expect((await db.query('select tablename from pg_tables where schemaname=$1 order by tablename',[schema])).rows.map(row=>row.tablename))
       .toEqual(['sync_access_events','sync_auth_sessions','sync_device_grants','sync_devices','sync_remote_sessions','sync_schema_migrations']);
   });
@@ -147,7 +147,8 @@ integration('access-code isolated DB authority, migrations and real lock races',
         values($1,'fixture',$2,$3,'native','control',$4,$5,now()+interval '1 hour','cli',2,1,1,$6,'preserved-endpoint')`,
         [randomUUID(),cliHost,controller,epoch,auth,cliGrant]);
       const before=await query('select * from sync_remote_sessions order by id');
-      await query(SCHEMA_SQL);await query(SCHEMA_SQL);
+      const migration6=SCHEMA_SQL.split('do $$ begin').slice(0,6).join('do $$ begin');
+      await query(migration6);await query(migration6);
       expect((await query('select * from sync_remote_sessions order by id')).rows).toEqual(before.rows);
       const indices=await query('select indexname,indexdef from pg_indexes where schemaname=$1',[migration]);
       expect(indices.rows.find(row=>row.indexname==='sync_one_controller_per_host_idx')!.indexdef).toContain("purpose <> 'access-code'");

@@ -7,7 +7,7 @@ import { ActiveEndpoint, endpointFeatures } from '../common/protocol';
 
 export type TicketPayload =
   | { role: 'device'; ownerAccountId: string; deviceId: string; platform: Device['platform']; authSessionId:string;
-      protocolVersion?: number; capabilities?: string[]; cliProtocolVersion?: number; cliChatProtocolVersion?: number }
+      protocolVersion?: number; capabilities?: string[]; cliProtocolVersion?: number; cliChatProtocolVersion?: number; androidControlProtocolVersion?: number }
   | { role: 'controller'; ownerAccountId: string; sessionId: string; browser: boolean; authSessionId: string };
 
 @Injectable()

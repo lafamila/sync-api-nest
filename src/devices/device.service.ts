@@ -10,7 +10,7 @@ import { ApproveGrantDto, BrowserRecoveryDto, CapabilityUpdateDto, ConnectDevice
 import { DeviceProofService } from './device-proof.service';
 import { DeviceRepository } from './device.repository';
 import { ModeService } from './mode.service';
-import { EndpointFeatures, endpointFeatures, negotiate, requireAccessCodeProtocol, requireBoundedHost, requireCliProtocol, requireCliChatProtocol, requireWebProtocol, supportsSession } from '../common/protocol';
+import { EndpointFeatures, endpointFeatures, negotiate, requireAndroidControlProtocol, requireAccessCodeProtocol, requireBoundedHost, requireCliProtocol, requireCliChatProtocol, requireWebProtocol, supportsSession } from '../common/protocol';
 import { randomOpaque, sha256 } from '../common/crypto';
 import { WireBrowserActivityState } from '../generated/sync-wire';
 
@@ -70,7 +70,7 @@ export class DeviceService {
   async listGrants(session: AuthSessionContext, hostId: string) {
     if (!await this.devices.findOwned(session.account.id,hostId)) throw new NotFoundException('Device not found');
     const grants = await this.devices.listGrants(session.account.id,hostId);
-    return { grants:grants.map((grant) => ({ id:grant.id,controllerDeviceId:grant.controllerDeviceId,createdAt:grant.createdAt })) };
+    return { grants:grants.map((grant) => ({ id:grant.id,controllerDeviceId:grant.controllerDeviceId,scope:grant.scope,createdAt:grant.createdAt })) };
   }
 
   async approveGrant(session:AuthSessionContext,hostId:string,input:ApproveGrantDto) {
@@ -78,9 +78,12 @@ export class DeviceService {
     if(input.controllerDeviceId===hostId) throw new BadRequestException('Host and controller devices must differ');
     const controller=await this.devices.findOwned(session.account.id,input.controllerDeviceId);
     if(!controller) throw new NotFoundException('Controller device not found');
-    const grant=await this.devices.rememberGrant(session.account.id,hostId,controller.id,isMobile(host.platform)?'view':'control');
+    const scope=input.scope ?? (isMobile(host.platform)?'view':'control');
+    if(host.platform==='ios' && scope==='control') throw new ForbiddenException('iOS hosts support view-only sessions');
+    const grant=await this.devices.rememberGrant(session.account.id,hostId,controller.id,scope);
+    for(const id of grant.endedSessionIds ?? []) this.revocations.emit({kind:'session',id,reason:'grant_scope_changed'});
     await this.devices.audit(session.account.id,'grant_approved',{deviceId:hostId,metadata:{controllerDeviceId:controller.id}});
-    return { grant:{id:grant.id,controllerDeviceId:grant.controllerDeviceId,createdAt:grant.createdAt} };
+    return { grant:{id:grant.id,controllerDeviceId:grant.controllerDeviceId,scope:grant.scope,createdAt:grant.createdAt} };
   }
 
   async revokeGrant(session: AuthSessionContext, hostId: string, grantId: string, proof: DeviceProofDto) {
@@ -94,7 +97,7 @@ export class DeviceService {
   async connect(session: AuthSessionContext, hostId: string, input: ConnectDeviceDto, ip: string) {
     const purpose=input.purpose ?? 'screen';
     const accessCode=purpose==='access-code';
-    const chat=!accessCode && input.cliChatProtocolVersion!==undefined;
+    let chat=!accessCode && input.cliChatProtocolVersion!==undefined;
     if(accessCode && (session.source!=='native' || input.scope!=='control' || input.code!==undefined)) {
       throw new ForbiddenException('Access code lookup requires trusted native control without PIN access');
     }
@@ -111,10 +114,16 @@ export class DeviceService {
       if(purpose==='cli' || chat || accessCode) throw new ForbiddenException('Host is not authorized');
       throw new NotFoundException('Host device not found');
     }
+    const androidControl=host.platform==='android' && input.scope==='control';
+    if(androidControl && (session.source!=='native' || purpose!=='screen' || input.code!==undefined)) {
+      throw new ForbiddenException('Android control requires trusted native screen control without PIN access');
+    }
+    if(androidControl) chat=false;
     if((purpose==='cli' || chat) && host.platform!=='macos') throw new ForbiddenException('CLI sessions require a Mac host');
     if(accessCode && !['macos','windows'].includes(host.platform)) throw new ForbiddenException('Access code lookup requires a desktop host');
-    if (isMobile(host.platform) && input.scope !== 'view') throw new ForbiddenException('Mobile hosts support view-only sessions');
+    if (host.platform==='ios' && input.scope !== 'view') throw new ForbiddenException('iOS hosts support view-only sessions');
     let mode = await this.modes.require(session.account.id,hostId);
+    if(androidControl && mode.allowControl!==true) throw new ForbiddenException('Android remote input is disabled for this mode');
     if(accessCode && !mode.allowBrowser) throw new ForbiddenException('Web and temporary access is disabled for this mode');
     let controllerDeviceId: string | undefined;
     let authorizationGrantId:string|undefined;
@@ -150,6 +159,7 @@ export class DeviceService {
       if(grantAllows) authorizationGrantId=grant.id;
       if((purpose==='cli' || chat) && (!grant || grant.scope!=='control')) throw new ForbiddenException('CLI sessions require a control grant');
       if(accessCode && (!grant || grant.scope!=='control')) throw new ForbiddenException('Access code lookup requires a control grant');
+      if(androidControl && (!grant || grant.scope!=='control')) throw new ForbiddenException('Android control requires an explicit control grant');
       if (requiresPin) {
         if(isMobile(host.platform) || !mode.allowBrowser) {
           throw new ForbiddenException('Untrusted temporary connections are disabled for this host');
@@ -161,6 +171,12 @@ export class DeviceService {
     const endpoint=await this.tickets.activeEndpoint(hostId);
     if (!endpoint) throw new ForbiddenException('Host device is offline');
     const features=negotiate(endpoint,endpointFeatures(input));
+    if(androidControl) {
+      requireAndroidControlProtocol(endpoint,endpointFeatures(input));
+      features.androidControlProtocolVersion=1;
+      // input-host describes the host's role; a phone controller need not itself host input.
+      if(!features.capabilities.includes('input-host')) features.capabilities.push('input-host');
+    }
     const cliEligible=session.source==='native' && host.platform==='macos' && input.scope==='control' && Boolean(authorizationGrantId);
     if(!cliEligible || accessCode) { delete features.cliProtocolVersion; delete features.cliChatProtocolVersion; }
     if(chat) requireCliChatProtocol(features);
@@ -178,15 +194,15 @@ export class DeviceService {
       authSessionId:session.databaseId,expiresAt,...features,purpose,hostEndpointId:endpoint.id,
       authorizationGrantId,connectionTimeoutSeconds:this.config.config.ticketTtlSeconds,
       activityTokenHash:activityToken?sha256(activityToken):undefined,idleTimeoutSeconds:this.config.config.webIdleTimeoutSeconds };
-    const remote=accessCode ? await this.sessions.create(createInput,async()=>{
+    const remote=accessCode || androidControl ? await this.sessions.create(createInput,async()=>{
       const liveMode=await this.modes.require(session.account.id,hostId);
       const liveEndpoint=await this.tickets.activeEndpoint(hostId);
-      return liveMode.epoch===mode.epoch && liveMode.allowBrowser && liveEndpoint?.id===endpoint.id && supportsSession(liveEndpoint,features);
+      return liveMode.epoch===mode.epoch && (androidControl?liveMode.allowControl===true:liveMode.allowBrowser) && liveEndpoint?.id===endpoint.id && supportsSession(liveEndpoint,features);
     }) : await this.sessions.create(createInput);
     try {
       const currentMode=await this.modes.require(session.account.id,hostId);
       const currentEndpoint=await this.tickets.activeEndpoint(hostId);
-      if(currentMode.epoch!==mode.epoch || (accessCode && !currentMode.allowBrowser) || currentEndpoint?.id!==endpoint.id || !supportsSession(currentEndpoint,features)) {
+      if(currentMode.epoch!==mode.epoch || (accessCode && !currentMode.allowBrowser) || (androidControl && currentMode.allowControl!==true) || currentEndpoint?.id!==endpoint.id || !supportsSession(currentEndpoint,features)) {
         throw new ForbiddenException('Remote mode changed during connection authorization');
       }
       const ticket = await this.tickets.issue({ role:'controller', ownerAccountId:session.account.id,
@@ -251,12 +267,15 @@ export function presentSession(session: import('../sessions/remote-session.repos
   return { id:session.id,hostId:session.hostId,controllerId:session.controllerId,scope:session.scope,epoch:session.epoch,expiresAt:session.expiresAt,
     protocolVersion:session.protocolVersion,capabilities:session.capabilities,purpose:session.purpose ?? 'screen',
     ...(session.cliProtocolVersion===undefined?{}:{cliProtocolVersion:session.cliProtocolVersion}),
-    ...(session.cliChatProtocolVersion===undefined?{}:{cliChatProtocolVersion:session.cliChatProtocolVersion}) };
+    ...(session.cliChatProtocolVersion===undefined?{}:{cliChatProtocolVersion:session.cliChatProtocolVersion}),
+    ...(session.androidControlProtocolVersion===undefined?{}:{androidControlProtocolVersion:session.androidControlProtocolVersion}) };
 }
 
 export function presentDevice(device:import('./device.repository').Device,endpoint?:EndpointFeatures) {
-  return {id:device.id,name:device.name,platform:device.platform,protocolVersion:device.protocolVersion,
-    capabilities:device.capabilities,...(device.clientVersion?{clientVersion:device.clientVersion}:{}),
+  return {id:device.id,name:device.name,platform:device.platform,protocolVersion:device.platform==='android' && endpoint?endpoint.protocolVersion:device.protocolVersion,
+    capabilities:device.platform==='android' && endpoint?endpoint.capabilities:device.capabilities,...(device.clientVersion?{clientVersion:device.clientVersion}:{}),
+    ...(device.platform==='android' && endpoint?.androidControlProtocolVersion===1 && endpoint.capabilities.includes('input-host')
+      ?{androidControlProtocolVersion:1}:{}),
     ...(endpoint?.cliProtocolVersion===undefined?{}:{cliProtocolVersion:endpoint.cliProtocolVersion}),
     ...(endpoint?.cliChatProtocolVersion===undefined?{}:{cliChatProtocolVersion:endpoint.cliChatProtocolVersion})};
 }

@@ -1,12 +1,14 @@
 import { HttpException } from '@nestjs/common';
 import { SYNC_CAPABILITIES, SYNC_LIMITS, SYNC_MINIMUM_WEB_PROTOCOL_VERSION, SYNC_PROTOCOL_VERSION } from '../generated/sync-wire';
 
-export interface EndpointFeatures { protocolVersion: number; capabilities: string[]; cliProtocolVersion?: number; cliChatProtocolVersion?: number }
+export interface EndpointFeatures { protocolVersion: number; capabilities: string[]; cliProtocolVersion?: number; cliChatProtocolVersion?: number; androidControlProtocolVersion?: number }
 export interface ActiveEndpoint extends EndpointFeatures { id: string }
 
-export function endpointFeatures(input: { protocolVersion?: number; capabilities?: readonly string[]; cliProtocolVersion?: number; cliChatProtocolVersion?: number }): EndpointFeatures {
+export function endpointFeatures(input: { protocolVersion?: number; capabilities?: readonly string[]; cliProtocolVersion?: number; cliChatProtocolVersion?: number; androidControlProtocolVersion?: number }): EndpointFeatures {
   return { protocolVersion: Math.min(input.protocolVersion ?? 1, SYNC_PROTOCOL_VERSION),
     capabilities: SYNC_CAPABILITIES.filter((capability) => input.capabilities?.includes(capability)),
+    ...((input.protocolVersion ?? 1)>=2 && input.androidControlProtocolVersion===SYNC_LIMITS.androidControlProtocolVersion
+      ? {androidControlProtocolVersion:SYNC_LIMITS.androidControlProtocolVersion}:{}),
     ...((input.protocolVersion ?? 1)>=2 && input.cliProtocolVersion===SYNC_LIMITS.cliProtocolVersion
       ? {cliProtocolVersion:SYNC_LIMITS.cliProtocolVersion}:{}),
     ...((input.protocolVersion ?? 1)>=2 && input.cliProtocolVersion===SYNC_LIMITS.cliProtocolVersion &&
@@ -33,12 +35,22 @@ export function negotiate(host: EndpointFeatures, controller: EndpointFeatures):
 
 export function supportsSession(host: EndpointFeatures, session: EndpointFeatures, requireBoundedHosts=false): boolean {
   return (!requireBoundedHosts || host.capabilities.includes('bounded-lifetime')) &&
+    (session.androidControlProtocolVersion===undefined || (session.androidControlProtocolVersion===SYNC_LIMITS.androidControlProtocolVersion &&
+      host.protocolVersion>=2 && host.androidControlProtocolVersion===SYNC_LIMITS.androidControlProtocolVersion && host.capabilities.includes('input-host'))) &&
     (session.cliProtocolVersion===undefined || (host.protocolVersion>=2 && host.cliProtocolVersion===session.cliProtocolVersion)) &&
     (session.cliChatProtocolVersion===undefined || (session.cliProtocolVersion===SYNC_LIMITS.cliProtocolVersion &&
       session.cliChatProtocolVersion===SYNC_LIMITS.cliChatProtocolVersion && host.cliProtocolVersion===SYNC_LIMITS.cliProtocolVersion &&
       host.cliChatProtocolVersion===session.cliChatProtocolVersion)) &&
     host.protocolVersion >= session.protocolVersion && session.capabilities.every((capability) =>
     capability === 'viewer-displays' || host.capabilities.includes(capability));
+}
+
+export function requireAndroidControlProtocol(host:EndpointFeatures,controller:EndpointFeatures):void {
+  if(host.protocolVersion<2 || controller.protocolVersion<2 ||
+    host.androidControlProtocolVersion!==SYNC_LIMITS.androidControlProtocolVersion ||
+    controller.androidControlProtocolVersion!==SYNC_LIMITS.androidControlProtocolVersion || !host.capabilities.includes('input-host')) {
+    throw new HttpException({statusCode:426,error:'android-control-update-required',message:'Update both apps to support Android control'},426);
+  }
 }
 
 export function requireCliProtocol(features:EndpointFeatures,host:EndpointFeatures=features,requireBoundedHosts=false):void {

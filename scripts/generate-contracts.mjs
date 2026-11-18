@@ -81,6 +81,7 @@ export function checkSchema(contract) {
     ['accessCodeProtocolVersion',contract.$defs.WireAccessCodeFrame.properties.version.const],
     ['maxClientVersionLength',contract.$defs.WireDevice.properties.clientVersion.maxLength],
     ['cliProtocolVersion',contract.$defs.CliProtocolVersion.const],
+    ['androidControlProtocolVersion',contract.$defs.AndroidControlProtocolVersion.const],
     ['maxCliTextUtf8Bytes',contract.$defs.WireCliFrame.properties.text['x-maxUtf8Bytes']],
     ['maxCliSessions',contract.$defs.WireCliFrame.properties.sessions.maxItems],
     ['maxCliNameLength',contract.$defs.WireCliSession.properties.name.maxLength],
@@ -100,6 +101,11 @@ export function checkSchema(contract) {
     ['maxCliChatChunks',contract.$defs.WireCliChatFrame.properties.chunkCount.maximum],
   ];
   if (mirrored.some(([name,value])=>bounds[name] !== value)) throw new Error('Catalog/schema bound drift');
+  const channels=contract['x-sync'].androidControlChannels;
+  if(canonicalJSON(channels)!==canonicalJSON({
+    reliable:{id:bounds.androidControlReliableChannelId,negotiated:true,ordered:true,maxRetransmits:-1,maxPacketLifeTime:-1},
+    motion:{id:bounds.androidControlMotionChannelId,negotiated:true,ordered:false,maxRetransmits:0,maxPacketLifeTime:-1},
+  }) || bounds.androidControlReliableChannelId!==4 || bounds.androidControlMotionChannelId!==6) throw new Error('Android control channel contract drift');
 }
 
 const unwrap = (schema, defs) => schema.$ref ? { ...unwrap(defs[schema.$ref.split('/').at(-1)], defs), ...Object.fromEntries(Object.entries(schema).filter(([key]) => key !== '$ref')) } : schema;

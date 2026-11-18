@@ -50,6 +50,27 @@ Migration6 preserves v5 rows and ordinary host exclusivity, with one code-only
 session per host/controller pair. Test only fresh loopback sync_test schemas and
 UUID Redis prefixes. Do not apply migration6 to dev/production during coding.
 
+## Android Control1
+
+Canonical execution plan: `../.idea/SYNC_ANDROID_REMOTE_CONTROL_PLAN.md`; API contract:
+`docs/android-control.md`. Base2/eight capabilities unchanged. Optional version1
+belongs only on ticket/connect/live device/immutable control session, never stored
+registration/capability metadata. input-host is a host-role check, not controller
+intersection. Android requires native/nonself/same-owner/exact control grant,
+allowControl mode and original live endpoint; browser/PIN/iOS control forbidden.
+First mode/ticket can precede capture/socket. Actual dispatch additionally requires
+native accessibility/local input consent/full-display capture. Default view grants
+stay view; explicit scope changes terminate pair rows under grant locks. Creation,
+install and bind recheck locked grant/mode/endpoint; never upgrade view/desktop/CLI/code
+sessions. Migration7 is nullable/additive, not applied to dev/production here.
+AndroidControl1 alone uses both peers' locally created externally negotiated
+channels: reliable ID4/ordered/unlimited and motion ID6/unordered/retransmits0.
+Never derive authority from received DCEP reliability metadata; old channels stay.
+`SYNC_ANDROID_CONTROL_DB_SLOT=approved npm run test:integration` runs all four DB
+suites only after slot grant, in fresh loopback sync_test schemas/Redis prefixes.
+The former legacy public-truncate integration path is removed. Coordinate native
+compiler slots; explicit `SYNC_CONTRACT_SKIP_NATIVE_COMPILERS=1` skips them while held.
+
 ## Build Artifact Retention
 
 워크스페이스 루트 [CLAUDE.md 원칙 25](../CLAUDE.md)와 로컬 [.build-artifacts.json](./.build-artifacts.json)을 빌드 산출물 목록의 canonical 기준으로 삼는다. 공용 `$build-artifacts list|build|clean`을 사용하며 기본 동작은 `list`이고, 파일 수정 시각만으로 빌드 성공을 추정하지 않는다.

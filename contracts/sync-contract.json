@@ -14,6 +14,7 @@
       "maxDisplays": 32, "maxDisplayIdLength": 128, "maxDisplayNameLength": 256,
       "maxDisplayDimension": 32768, "maxTextUtf8Bytes": 4096, "maxScrollDelta": 100, "maxSdpLength": 120000, "maxIceCandidateLength": 8192, "maxSignalBytes": 131072,
       "maxSequence": 9007199254740991, "maxClientVersionLength": 64, "maxCapabilities": 8,
+      "androidControlProtocolVersion": 1, "androidControlReliableChannelId": 4, "androidControlMotionChannelId": 6,
       "accessCodeProtocolVersion": 1, "accessCodeRequestTimeoutSeconds": 10, "maxAccessCodeFrameBytes": 2048,
       "minimumModeSeconds": 300, "defaultModeSeconds": 43200, "maximumModeSeconds": 604800, "defaultMaximumModeSeconds": 86400,
       "webIdleTimeoutSeconds": 900, "displaySelectionTimeoutSeconds": 10, "displayRecoveryTimeoutSeconds": 5,
@@ -31,6 +32,10 @@
       "maxCliChatScanBytes": 2097152, "cliChatScanMilliseconds": 250,
       "cliChatTailIntervalMilliseconds": 1000
     },
+    "androidControlChannels": {
+      "reliable": {"id":4,"negotiated":true,"ordered":true,"maxRetransmits":-1,"maxPacketLifeTime":-1},
+      "motion": {"id":6,"negotiated":true,"ordered":false,"maxRetransmits":0,"maxPacketLifeTime":-1}
+    },
     "proofs": {"registration": "sync:register", "device": "sync:device"},
     "directions": {"get-displays": "controller-to-host", "select-display": "controller-to-host", "displays": "host-to-controller", "display-error": "host-to-controller"}
   },
@@ -44,6 +49,7 @@
     "ProtocolVersion": {"type":"integer", "minimum":1, "maximum":2, "default":1},
     "CliProtocolVersion": {"type":"integer", "const":1},
     "CliChatProtocolVersion": {"type":"integer", "const":1},
+    "AndroidControlProtocolVersion": {"type":"integer", "const":1},
     "SessionPurpose": {"type":"string", "enum":["screen","cli","access-code"], "default":"screen"},
     "WireAccessCodeFrame": {"type":"object", "additionalProperties":false, "required":["type","version","op","sessionId","epoch","requestId"], "properties":{
       "type":{"type":"string","const":"access-code","default":"access-code"}, "version":{"type":"integer","const":1,"default":1},
@@ -58,28 +64,28 @@
     ]},
     "WireCliError": {"type":"string", "enum":["unsupported","stale-target","busy","invalid-sequence","forbidden","unavailable","expired","conflict","not-found","unknown-delivery"]},
     "DisplayId": {"type":"string", "minLength":1, "maxLength":128, "pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
-    "Key": {"type":"string", "enum":["Enter","Backspace","Tab","Escape","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Delete","Home","End","PageUp","PageDown","Space","KeyA","KeyB","KeyC","KeyD","KeyE","KeyF","KeyG","KeyH","KeyI","KeyJ","KeyK","KeyL","KeyM","KeyN","KeyO","KeyP","KeyQ","KeyR","KeyS","KeyT","KeyU","KeyV","KeyW","KeyX","KeyY","KeyZ","Digit0","Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9"]},
+    "Key": {"type":"string", "enum":["Enter","Backspace","Tab","Escape","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Delete","Home","End","PageUp","PageDown","Space","KeyA","KeyB","KeyC","KeyD","KeyE","KeyF","KeyG","KeyH","KeyI","KeyJ","KeyK","KeyL","KeyM","KeyN","KeyO","KeyP","KeyQ","KeyR","KeyS","KeyT","KeyU","KeyV","KeyW","KeyX","KeyY","KeyZ","Digit0","Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","AndroidBack","AndroidHome","AndroidRecents"]},
     "Modifier": {"type":"string", "enum":["meta","ctrl","alt","shift"]},
     "MouseButton": {"type":"string", "enum":["left","right"]},
     "WireAccount": {"type":"object", "additionalProperties":true, "required":["id","name","permission"], "properties":{
       "id":{"type":"string","minLength":1}, "name":{"type":"string"}, "permission":{"type":"string","enum":["member","superadmin"]}
     }},
     "WireMode": {"type":"object", "additionalProperties":true, "required":["epoch","expiresAt","allowBrowser"], "properties":{
-      "epoch":{"$ref":"#/$defs/UUID"}, "expiresAt":{"$ref":"#/$defs/ISODate"}, "allowBrowser":{"type":"boolean"}
+      "epoch":{"$ref":"#/$defs/UUID"}, "expiresAt":{"$ref":"#/$defs/ISODate"}, "allowBrowser":{"type":"boolean"}, "allowControl":{"type":"boolean","default":false}
     }},
     "WireDevice": {"type":"object", "additionalProperties":true, "required":["id","name","platform","online"], "properties":{
       "id":{"$ref":"#/$defs/UUID"}, "name":{"type":"string","minLength":1,"maxLength":80}, "platform":{"$ref":"#/$defs/NativePlatform"},
       "online":{"type":"boolean"}, "mode":{"$ref":"#/$defs/WireMode","x-nullable":true},
       "protocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "clientVersion":{"type":"string","x-nullable":true,"maxLength":64,"pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"},
       "capabilities":{"$ref":"#/$defs/Capabilities"}, "cliProtocolVersion":{"$ref":"#/$defs/CliProtocolVersion"},
-      "cliChatProtocolVersion":{"$ref":"#/$defs/CliChatProtocolVersion"}
+      "cliChatProtocolVersion":{"$ref":"#/$defs/CliChatProtocolVersion"}, "androidControlProtocolVersion":{"$ref":"#/$defs/AndroidControlProtocolVersion"}
     }},
     "WireRemoteSession": {"type":"object", "additionalProperties":true, "required":["id","hostId","scope","epoch","expiresAt"], "properties":{
       "id":{"$ref":"#/$defs/UUID"}, "hostId":{"$ref":"#/$defs/UUID"}, "controllerId":{"type":"string","x-nullable":true},
       "scope":{"type":"string","enum":["view","control"]}, "epoch":{"$ref":"#/$defs/UUID"}, "expiresAt":{"$ref":"#/$defs/ISODate"},
       "protocolVersion":{"$ref":"#/$defs/ProtocolVersion"}, "capabilities":{"$ref":"#/$defs/Capabilities"},
       "purpose":{"$ref":"#/$defs/SessionPurpose"}, "cliProtocolVersion":{"$ref":"#/$defs/CliProtocolVersion"},
-      "cliChatProtocolVersion":{"$ref":"#/$defs/CliChatProtocolVersion"}
+      "cliChatProtocolVersion":{"$ref":"#/$defs/CliChatProtocolVersion"}, "androidControlProtocolVersion":{"$ref":"#/$defs/AndroidControlProtocolVersion"}
     }},
     "WireICEServer": {"type":"object", "additionalProperties":true, "required":["urls"], "properties":{
       "urls":{"type":"array","items":{"type":"string","minLength":1},"minItems":1,"maxItems":16}, "username":{"type":"string"}, "credential":{"type":"string"}
@@ -233,7 +239,7 @@
     }},
     "WireFeatureFlags": {"type":"object", "additionalProperties":true, "properties":{
       "displaySelection":{"type":"boolean","default":false}, "browserIdle":{"type":"boolean","default":false}, "browserRecovery":{"type":"boolean","default":false}, "cliSessions":{"type":"boolean","default":false},
-      "cliChat":{"type":"boolean"}
+      "cliChat":{"type":"boolean"}, "androidControl":{"type":"boolean"}
     }},
     "WirePublicConfig": {"type":"object", "additionalProperties":true, "properties":{
       "product":{"type":"string","default":"Sync"}, "version":{"type":"string","default":""}, "authConfigured":{"type":"boolean","default":false}, "webUrl":{"type":"string"},

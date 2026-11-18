@@ -16,8 +16,10 @@ export class TicketController {
     this.security.assertMutation(req,req.syncSession);
     this.security.assertNativeSession(req.syncSession);
     const device=await this.proofs.verify(req.syncSession.account,proof);
+    const features=endpointFeatures(proof);
+    if(device.platform!=='android' || !features.capabilities.includes('input-host')) delete features.androidControlProtocolVersion;
     const ticket=await this.tickets.issue({ role:'device',ownerAccountId:req.syncSession.account.id,deviceId:device.id,
-      platform:device.platform,authSessionId:req.syncSession.databaseId,...endpointFeatures(proof) });
+      platform:device.platform,authSessionId:req.syncSession.databaseId,...features });
     return { ticket };
   }
 }
