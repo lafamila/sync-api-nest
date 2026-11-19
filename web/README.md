@@ -14,6 +14,14 @@ Playwright tests live under `web/`.
 - Sequence envelopes, 500 ms heartbeat, release-all lifecycle, keyboard modifiers,
   IME-confirmed text, pointer, drag, wheel, two-finger right-click/scroll and pinch.
 - Metrics, fit/fill, fullscreen, display selection, logout and explicit termination.
+- Aspect-fit video uses the entire browser viewport without page scroll. Session
+  controls reveal at the top edge, connection details open from the right edge,
+  and the modifier dock reveals at the bottom edge. These are overlays: opening
+  them does not resize the video, switch tracks or create another connection.
+- Desktop typing works directly while the page's remote surface has focus. A
+  persistent, visually hidden editor preserves real IME composition; Keyboard
+  still opens an optional visible editor for touch/manual input. Physical and
+  sticky Command/Control/Option/Shift retain the existing wire mapping.
 - Generation-bound fresh-peer recovery after transport or background lease loss;
   old reliable input is never replayed.
 
@@ -34,6 +42,19 @@ WAN evidence. Test screenshots persist under ignored `artifacts/v2-*.png`.
 
 ## Compatibility And Safety
 
+- Direct input is scoped to the remote surface/editor, not local fields, menus,
+  selects, contenteditable or shadow-root editors. Capability changes must not
+  steal their focus. View-only, unfocused, hidden and expired states cannot send
+  keyboard input; blur releases held keys and discards pending composition.
+- Cancelled IME events cannot replay through a late input, toolbar blur or fresh
+  edit. A new explicit editing intent clears old DOM text before accepting input.
+  The invisible capture retains a bounded grapheme tail; the visible editor is
+  not silently truncated. No clipboard read/synchronization or input logging is
+  introduced.
+- Browser chrome and OS-reserved shortcuts cannot be guaranteed to reach a page.
+  The virtual modifier buttons remain available to form remote shortcuts without
+  physically pressing the local OS modifier. Native/mobile app behavior is not
+  changed by this browser-only feature.
 - Read `/api/config` successfully before choosing request fields. Explicit legacy
   config omits v2 metadata/endpoints; auth, network and validation errors never
   trigger downgrade. A current browser declares protocol 2 even with a v1 host.
@@ -80,3 +101,21 @@ signing, installation and lifecycle belong to the native clients. This browser
 package does not bypass auth or provide a production fallback. NAS deployment,
 DNS/public auth registration, native hardware, external TURN/WAN and publishing
 remain outside these local browser checks.
+
+## Code-Only Viewport Update
+
+The2026-11-19 viewport/input update is checked through `npm run typecheck` and
+isolated fixture browser tests, not a production `build`. It does not replace
+`web/dist`, API output, a packaged Mac app or an installed native client, and does
+not restart a production/local user service. Screenshots and negative-to-positive
+input/layout evidence are retained under ignored `artifacts/immersive-final/`.
+Native processes and executable fingerprints are compared before/after the work.
+
+Final current-source verification:78/78 browser/pure cases passed in a single
+118.4-second run, with0 failures/skips/flaky cases/retries. Strict test-source
+typecheck and whitespace checks passed. This includes actual synthetic RTC video,
+ordinary/IME/modifier input, viewport/portrait bounds, local/shadow editor isolation,
+cancelled-IME negative-to-positive cases, and existing auth/lifetime/recovery tests.
+Desktop1280/800 and mobile390 screenshots passed visual review94; actual user
+sessions, native OS input, physical mobile keyboards and production deployment
+were not exercised. The owned test fixture server/browser ports were released.

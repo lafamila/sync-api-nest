@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { openRemoteKeyboard, revealConnectionDetails, revealSessionControls } from "./console-helpers";
 
 interface HarnessState {
   connectCount: number;
@@ -48,8 +49,9 @@ async function connectController(page: Page) {
   await openConnect(page);
   await page.getByLabel("6-digit access code").fill("123456");
   await page.getByRole("button", { name: "Connect" }).click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await expect.poll(() => page.getByTestId("remote-video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
+  await revealSessionControls(page);
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
 }
 
 test("keeps devices and controls behind the server session", async ({ page }) => {
@@ -92,8 +94,9 @@ test("negotiates real WebRTC video and both control channels", async ({ browser,
   await page.getByLabel("6-digit access code").fill("123456");
   await page.getByRole("button", { name: "Connect" }).click();
 
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await expect.poll(() => page.getByTestId("remote-video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
+  await revealSessionControls(page);
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("remote-console.png"), fullPage: true });
 
   await expect.poll(() => host.evaluate(() => (window as unknown as { __channels: unknown[] }).__channels)).toEqual(
@@ -108,8 +111,7 @@ test("negotiates real WebRTC video and both control channels", async ({ browser,
   expect(box).not.toBeNull();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.wheel(0, 42);
-  await page.getByRole("button", { name: "Keyboard" }).click();
-  const textInput = page.getByLabel("Remote text input");
+  const textInput = await openRemoteKeyboard(page);
   await textInput.fill("Sync 한글");
   await page.getByRole("button", { name: "Command" }).click();
   await textInput.press("a");
@@ -151,6 +153,7 @@ test("negotiates real WebRTC video and both control channels", async ({ browser,
       && messages.some((message) => message.type === "pointer")
       && messages.some((message) => message.type === "button" && message.button === "left" && message.down === false);
   }, beforeDrag)).toBe(true);
+  await revealConnectionDetails(page);
   await expect.poll(async () => Number(await page.getByTestId("data-rx").textContent())).toBeGreaterThan(0);
 
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
@@ -197,7 +200,7 @@ test("preserves Korean IME composition until committed and sends it once", async
     await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
     await authorize(context);
     await connectController(page);
-    await page.getByRole("button", { name: "Keyboard", exact: true }).click();
+    await openRemoteKeyboard(page);
     const input = page.getByLabel("Remote text input");
     await input.focus();
     const cdp = await context.newCDPSession(page);
@@ -229,7 +232,7 @@ test("keeps Hangul editable when the keyboard emits no composition events", asyn
     await expect.poll(() => host.evaluate(() => Boolean((window as unknown as { __hostReady: boolean }).__hostReady))).toBe(true);
     await authorize(context);
     await connectController(page);
-    await page.getByRole("button", { name: "Keyboard", exact: true }).click();
+    await openRemoteKeyboard(page);
     const input = page.getByLabel("Remote text input");
     for (const value of ["ㅎ", "하", "한", "한ㄱ", "한그", "한글", "한글 ㅇ", "한글 이", "한글 입", "한글 입ㄹ", "한글 입려", "한글 입력"]) {
       await input.evaluate((element: HTMLTextAreaElement, next) => {
@@ -272,7 +275,7 @@ test("sends sticky modifiers as native key events instead of text", async ({ bro
 
     await authorize(context);
     await connectController(page);
-    await page.getByRole("button", { name: "Keyboard", exact: true }).click();
+    await openRemoteKeyboard(page);
 
     for (const label of ["Command", "Control", "Option", "Shift"]) {
       const modifier = page.getByRole("button", { name: label, exact: true });
@@ -319,7 +322,7 @@ test("reconnects with a fresh peer and never replays old reliable input", async 
   expect(initial.connectCount).toBe(1);
   expect(initial.activeSessionId).toBeTruthy();
 
-  await page.getByRole("button", { name: "Keyboard" }).click();
+  await openRemoteKeyboard(page);
   await page.getByLabel("Remote text input").fill("before-loss-marker");
   await expect.poll(() => host.evaluate(() => {
     const messages = (window as unknown as { __messages: Array<{ type: string; text?: string; __generation: number }> }).__messages;
@@ -329,6 +332,7 @@ test("reconnects with a fresh peer and never replays old reliable input", async 
   await page.request.post("/__test/drop-controller");
   await expect.poll(async () => (await harnessState(page)).connectCount).toBe(2);
   await expect.poll(() => host.evaluate(() => (window as unknown as { __peerGeneration: number }).__peerGeneration)).toBe(2);
+  await revealSessionControls(page);
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await expect.poll(() => page.getByTestId("remote-video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
 
@@ -347,8 +351,7 @@ test("reconnects with a fresh peer and never replays old reliable input", async 
   expect(recoveredMessages.some((message) => message.type === "text" && message.text === "before-loss-marker")).toBe(false);
   expect(Math.min(...recoveredMessages.map((message) => message.seq))).toBe(1);
 
-  const textInput = page.getByLabel("Remote text input");
-  if (!await textInput.isVisible()) await page.getByRole("button", { name: "Keyboard" }).click();
+  const textInput = await openRemoteKeyboard(page);
   await textInput.fill("after-reconnect-marker");
   await expect.poll(() => host.evaluate(() => {
     const messages = (window as unknown as { __messages: Array<{ type: string; text?: string; __generation: number }> }).__messages;
@@ -375,6 +378,7 @@ test("explicitly ends a session and returns to refreshed hosts without reconnect
     const initial = await harnessState(page);
     const refreshed = page.waitForResponse((response) => response.url().endsWith("/api/devices") && response.ok());
 
+    await revealSessionControls(page);
     await page.getByRole("button", { name: "End session", exact: true }).click();
     await refreshed;
     await expect(page.getByRole("heading", { name: "Online desktops" })).toBeVisible();
@@ -414,6 +418,7 @@ test("renews the session after a foregrounded heartbeat lease expires", async ({
 
   await expect.poll(async () => (await harnessState(page)).connectCount).toBe(2);
   await expect.poll(() => host.evaluate(() => (window as unknown as { __peerGeneration: number }).__peerGeneration)).toBe(2);
+  await revealSessionControls(page);
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await hostContext.close();
 });

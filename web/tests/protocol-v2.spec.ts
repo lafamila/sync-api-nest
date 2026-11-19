@@ -2,6 +2,7 @@ import { expect, test as base, type BrowserContext, type Page } from "@playwrigh
 import { mkdir, writeFile } from "node:fs/promises";
 import { SYNC_LIMITS } from "../src/generated/sync-wire";
 import type { RemoteConnection } from "../src/remoteConnection";
+import { revealKeyboardControls, revealSessionControls } from "./console-helpers";
 
 interface State {
   connectCount:number; activeSessionId:string; activityCount:number;
@@ -42,9 +43,18 @@ async function connect(context:BrowserContext,page:Page,scope='Control',beforeCo
   await page.getByRole('button',{name:scope,exact:true}).click();
   await page.getByLabel('6-digit access code').fill('123456');
   await page.getByRole('button',{name:'Connect',exact:true}).click();
-  await expect(page.getByText('Connected',{exact:true})).toBeVisible();
   await expect.poll(()=>page.getByTestId('remote-video').evaluate((video:HTMLVideoElement)=>video.videoWidth)).toBeGreaterThan(0);
-  if(scope === 'Control') await expect(page.getByText('Input active',{exact:true})).toBeVisible();
+  await revealSessionControls(page);
+  await expect(page.getByText('Connected',{exact:true})).toBeVisible();
+  if(scope === 'Control') await expectInputActive(page);
+}
+async function expectInputActive(page:Page) {
+  await revealKeyboardControls(page);
+  await expect(page.getByText('Input active',{exact:true})).toBeVisible();
+}
+async function selectDisplay(page:Page,id:string) {
+  await revealSessionControls(page);
+  await page.getByLabel('Display',{exact:true}).selectOption(id);
 }
 async function state(page:Page):Promise<State> {return page.request.get('/__test/state').then(response=>response.json());}
 async function videoPixels(page:Page) {
@@ -122,7 +132,7 @@ test('JSON pong loss closes healthy RTP and protocol-pong transport within the s
   expect(elapsed).toBeLessThan(SYNC_LIMITS.signalingLivenessTimeoutSeconds*1000+1500);
   expect(await page.evaluate(()=>(window as unknown as {__lifetimeProbe:LifetimeProbe}).__lifetimeProbe.peers[0].connectionState)).toBe('closed');
   await page.request.post('/__test/options',{data:{dropJsonPongs:false}});
-  await expect(page.getByText('Input active',{exact:true})).toBeVisible();
+  await expectInputActive(page);
   expect((await state(page)).connectBodies).toHaveLength(1);
   expect(await host.evaluate(()=>(window as unknown as HostState).__peerGeneration)).toBe(2);
 });
@@ -280,15 +290,17 @@ test('display switch blocks input, correlates requestId and arms only a fresh in
   });
   await connect(context,page);
   await host.evaluate(()=>(window as unknown as HostState).__displayBehavior.delayMs=500);
+  await revealSessionControls(page);
   const before=await host.evaluate(()=>(window as unknown as HostState).__messages.length);
   await page.getByLabel('Display',{exact:true}).selectOption('portrait');
+  await revealKeyboardControls(page);
   await expect(page.getByText('Input locked',{exact:true})).toBeVisible();
   await expect(page.getByLabel('Display',{exact:true})).toBeDisabled();
   const box=(await page.getByTestId('video-stage').boundingBox())!;
   await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
   const pending=await host.evaluate(()=>(window as unknown as HostState).__messages.slice(-1)[0]);
   expect(pending.type).toBe('release-all');
-  await expect(page.getByText('Input active',{exact:true})).toBeVisible();
+  await expectInputActive(page);
   await expect(page.getByLabel('Display',{exact:true})).toHaveValue('portrait');
   await expect.poll(()=>page.getByTestId('remote-video').evaluate((video:HTMLVideoElement)=>video.videoWidth)).toBe(360);
   const messages=await host.evaluate(offset=>(window as unknown as HostState).__messages.slice(offset),before);
@@ -308,12 +320,13 @@ test('display switch blocks input, correlates requestId and arms only a fresh in
 test('late/duplicate display replies cannot rearm or roll back a correlated selection',async ({context,page,host})=>{
   await connect(context,page);
   await host.evaluate(()=>(window as unknown as HostState).__displayBehavior.delayMs=700);
-  await page.getByLabel('Display',{exact:true}).selectOption('portrait');
+  await selectDisplay(page,'portrait');
   const selection=await host.evaluate(()=>(window as unknown as HostState).__signals.filter(message=>message.type === 'select-display').slice(-1)[0]);
   await host.evaluate(message=>(window as unknown as HostState).__sendSignal({type:'displays',sessionId:message.sessionId,requestId:crypto.randomUUID(),displays:[{id:'main',name:'Main',width:640,height:360,isPrimary:true}],selectedDisplayId:'main',inputEpoch:crypto.randomUUID()}),selection);
+  await revealKeyboardControls(page);
   await expect(page.getByText('Input locked',{exact:true})).toBeVisible();
   await expect(page.getByLabel('Display',{exact:true})).toHaveValue('portrait');
-  await expect(page.getByText('Input active',{exact:true})).toBeVisible();
+  await expectInputActive(page);
   await host.evaluate(message=>(window as unknown as HostState).__sendSignal({type:'displays',sessionId:message.sessionId,requestId:message.requestId,displays:[{id:'main',name:'Main',width:640,height:360,isPrimary:true}],selectedDisplayId:'main',inputEpoch:message.inputEpoch}),selection);
   await page.waitForTimeout(100);
   await expect(page.getByLabel('Display',{exact:true})).toHaveValue('portrait');
@@ -323,7 +336,8 @@ test('display timeout makes one authoritative query while input stays blocked th
   await page.clock.install();
   await connect(context,page);
   await host.evaluate(()=>(window as unknown as HostState).__displayBehavior={ignoreSelection:true,ignoreQueries:true});
-  await page.getByLabel('Display',{exact:true}).selectOption('portrait');
+  await selectDisplay(page,'portrait');
+  await revealKeyboardControls(page);
   await page.clock.fastForward(10001);
   await expect(page.getByText('Input locked',{exact:true})).toBeVisible();
   await expect.poll(()=>host.evaluate(()=>(window as unknown as HostState).__signals.filter(message=>message.type === 'get-displays').length)).toBe(2);
@@ -344,6 +358,7 @@ test('removed/invalid selected display closes the affected session without recov
 test('display failure or malformed epoch never restores the old input lease',async ({context,page,host})=>{
   await connect(context,page);
   await host.evaluate(()=>(window as unknown as HostState).__displayBehavior.error='unavailable');
+  await revealSessionControls(page);
   const before=await host.evaluate(()=>(window as unknown as HostState).__messages.length);
   await page.getByLabel('Display',{exact:true}).selectOption('portrait');
   await expect(page.getByRole('alert')).toContainText('Display unavailable');
@@ -355,7 +370,8 @@ test('display failure or malformed epoch never restores the old input lease',asy
 test('logout invalidates a pending display selection before its late completion',async ({context,page,host})=>{
   await connect(context,page);
   await host.evaluate(()=>(window as unknown as HostState).__displayBehavior.delayMs=600);
-  await page.getByLabel('Display',{exact:true}).selectOption('portrait');
+  await selectDisplay(page,'portrait');
+  await revealSessionControls(page);
   await page.getByRole('button',{name:'Sign out',exact:true}).click();
   await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
   await page.waitForTimeout(700);
@@ -384,7 +400,7 @@ test('view-only explicit video interaction counts as activity; hover/focus/heart
   expect((await state(page)).activityCount).toBe(0);
   await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
   await expect.poll(async ()=>(await state(page)).activityCount).toBe(1);
-  await page.getByLabel('Display',{exact:true}).selectOption('portrait');
+  await selectDisplay(page,'portrait');
   await expect(page.getByLabel('Display',{exact:true})).toHaveValue('portrait');
   expect(await host.evaluate(()=>(window as unknown as HostState).__messages.length)).toBe(0);
 });
@@ -394,7 +410,7 @@ test('one-use recovery preserves last activity/deadline and never sends cached P
   const initial=await state(page);
   await page.request.post('/__test/drop-controller');
   await expect.poll(async ()=>(await state(page)).connectCount).toBe(2);
-  await expect(page.getByText('Input active',{exact:true})).toBeVisible();
+  await expectInputActive(page);
   const recovered=await state(page);
   expect(recovered.connectBodies).toHaveLength(1);
   expect(recovered.recoveryBodies).toHaveLength(1);
@@ -482,6 +498,7 @@ for (const legacy of [false,true]) {
       expect(delivered).toBe(false);
 
       // Explicit Disconnect, not logout: cookie+CSRF authority remains available for late DELETE.
+      await revealSessionControls(page);
       await page.getByRole('button',{name:'End session',exact:true}).click();
       await expect(page.getByRole('heading',{name:'Online desktops',exact:true})).toBeVisible();
       await expect(page.getByTestId('video-stage')).toHaveCount(0);
@@ -553,6 +570,7 @@ test('only explicit legacy config omits new fields; configuration errors never d
   await connect(context,page);
   expect((await state(page)).connectBodies[0]).toEqual({code:'123456',scope:'control'});
   await expect(page.getByLabel('Display',{exact:true})).toHaveCount(0);
+  await revealSessionControls(page);
   await page.getByRole('button',{name:'End session',exact:true}).click();
   await page.route('**/api/config',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Config unavailable'})}));
   await page.reload();
@@ -570,6 +588,7 @@ test('desktop/mobile video stays nonblank and compact with display controls and 
     await page.setViewportSize(viewport);
     expect(await videoPixels(page)).toBeGreaterThan(3000);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await revealSessionControls(page);
     const selector=(await page.getByLabel('Display',{exact:true}).boundingBox())!;
     expect(selector.x).toBeGreaterThanOrEqual(0);expect(selector.x+selector.width).toBeLessThanOrEqual(viewport.width);
     const screenshot=await page.screenshot({path:test.info().outputPath(`v2-${viewport.width}.png`),fullPage:true});

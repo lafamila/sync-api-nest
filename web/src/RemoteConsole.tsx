@@ -14,11 +14,14 @@ import {
   Send,
   Shrink,
   Monitor,
+  PanelRightOpen,
+  PanelRightClose,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import {
   type CompositionEvent,
   type FormEvent,
-  type KeyboardEvent,
   type PointerEvent,
   type WheelEvent,
   useEffect,
@@ -27,7 +30,7 @@ import {
   useState,
 } from "react";
 import type { RemoteConnection } from "./remoteConnection";
-import { remoteTextEdit, wireTextChunks } from "./remoteTextInput";
+import { keyboardBufferTail, remoteTextEdit, wireTextChunks } from "./remoteTextInput";
 import { SYNC_KEYS } from "./generated/sync-wire";
 import type {
   Account,
@@ -123,10 +126,21 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [stickyModifiers, setStickyModifiers] = useState<Set<Modifier>>(new Set());
   const [fullscreen, setFullscreen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [dockOpen, setDockOpen] = useState(false);
+  const [sessionControlsOpen, setSessionControlsOpen] = useState(false);
+  const [desktopKeyboard, setDesktopKeyboard] = useState(() => window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  const shellRef = useRef<HTMLElement>(null);
+  const dockHoveredRef = useRef(false);
+  const headerHoveredRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const keyboardRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
+  const keyboardEpochRef = useRef(0);
+  const compositionEpochRef = useRef<number | null>(null);
+  const cancelledCompositionRef = useRef(false);
+  const keyboardVisibilityRef = useRef(false);
   const inputValueRef = useRef("");
   const forwardedKeysRef = useRef(new Set<string>());
   const touchesRef = useRef(new Map<number, TouchPoint>());
@@ -149,15 +163,57 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }, [stream]);
 
   useEffect(() => {
+    if (keyboardVisibilityRef.current === keyboardOpen) return;
+    keyboardVisibilityRef.current = keyboardOpen;
     if (keyboardOpen) keyboardRef.current?.focus();
-  }, [keyboardOpen]);
+    else if (desktopKeyboard && authorized && remoteKeyboardTarget(document.activeElement)) keyboardRef.current?.focus({ preventScroll: true });
+  }, [keyboardOpen, desktopKeyboard, authorized]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const change = () => setDesktopKeyboard(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
 
   useEffect(() => {
     if (!authorized) {
       resetKeyboardBuffer();
       forwardedKeysRef.current.clear();
+    } else if (desktopKeyboard && remoteKeyboardTarget(document.activeElement)) {
+      keyboardRef.current?.focus({ preventScroll: true });
     }
-  }, [authorized]);
+  }, [authorized, desktopKeyboard]);
+
+  useEffect(() => {
+    const focus = () => {
+      if (desktopKeyboard && authorized && connection.canControl() && document.visibilityState === "visible" &&
+          remoteKeyboardTarget(document.activeElement)) keyboardRef.current?.focus({ preventScroll: true });
+    };
+    const key = (event: globalThis.KeyboardEvent, down: boolean) => {
+      if (event.target === keyboardRef.current || !remoteKeyboardTarget(event.target) ||
+          event.composedPath().some(localControl) || !authorized ||
+          !connection.canControl() || document.visibilityState !== "visible" || !document.hasFocus()) return;
+      keyboardRef.current?.focus({ preventScroll: true });
+      if (down && !event.isComposing && event.keyCode !== 229 && event.key !== "Dead" &&
+          Array.from(event.key).length === 1 && !stickyModifiers.has("shift") &&
+          currentModifiers(event).every(modifier => modifier === "shift")) {
+        event.preventDefault();
+        synchronizeKeyboard(); resetKeyboardBuffer();
+        connection.sendReliable({ type: "text", text: event.key });
+      } else keyboardEvent(event, down, true);
+    };
+    const down = (event: globalThis.KeyboardEvent) => key(event, true);
+    const up = (event: globalThis.KeyboardEvent) => key(event, false);
+    window.addEventListener("focus", focus);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("focus", focus);
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, [authorized, connection, desktopKeyboard, stickyModifiers]);
 
   useEffect(() => {
     const release = () => {
@@ -171,7 +227,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     const visibility = () => {
       if (document.visibilityState !== "visible") release();
     };
-    const fullscreenChange = () => setFullscreen(document.fullscreenElement === stageRef.current);
+    const fullscreenChange = () => setFullscreen(document.fullscreenElement === shellRef.current);
     window.addEventListener("blur", release);
     document.addEventListener("visibilitychange", visibility);
     document.addEventListener("fullscreenchange", fullscreenChange);
@@ -182,6 +238,25 @@ export function RemoteConsole(props: RemoteConsoleProps) {
       document.removeEventListener("fullscreenchange", fullscreenChange);
     };
   }, [connection]);
+
+  function localControl(target: EventTarget | null): boolean {
+    return target instanceof Element && target !== keyboardRef.current && Boolean(
+      target.closest("button,select,input,textarea,a,[contenteditable]:not([contenteditable=false])"),
+    );
+  }
+
+  function remoteKeyboardTarget(target: EventTarget | null): boolean {
+    return target === keyboardRef.current || target === document.body || target === document.documentElement ||
+      target === stageRef.current || target === shellRef.current;
+  }
+
+  function keyboardAllowed(): boolean {
+    return authorized && connection.canControl() && document.visibilityState === "visible" && document.hasFocus();
+  }
+
+  function focusKeyboard() {
+    if (desktopKeyboard && authorized && connection.canControl()) keyboardRef.current?.focus({ preventScroll: true });
+  }
 
   function normalized(clientX: number, clientY: number): Point | null {
     const stage = stageRef.current;
@@ -218,10 +293,11 @@ export function RemoteConsole(props: RemoteConsoleProps) {
   }
 
   function pointerDown(event: PointerEvent<HTMLDivElement>) {
-    if ((event.target as Element).closest("button,select,label,input")) return;
+    if ((event.target as Element).closest("button,select,label,input,textarea,a")) return;
     if (session.scope === "view") connection.userActivity();
     if (!authorized) return;
-    event.currentTarget.focus();
+    if (desktopKeyboard && event.pointerType !== "touch") { event.preventDefault(); focusKeyboard(); }
+    else event.currentTarget.focus({ preventScroll: true });
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -365,7 +441,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     });
   }
 
-  function currentModifiers(event?: KeyboardEvent): Modifier[] {
+  function currentModifiers(event?: Pick<globalThis.KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">): Modifier[] {
     const modifiers = new Set(stickyModifiers);
     if (event?.metaKey) modifiers.add("meta");
     if (event?.ctrlKey) modifiers.add("ctrl");
@@ -374,10 +450,15 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     return Array.from(modifiers);
   }
 
-  function keyboardEvent(event: KeyboardEvent<HTMLTextAreaElement>, down: boolean) {
-    if (!authorized || composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || PHYSICAL_MODIFIER_CODES.has(event.code)) return;
+  function keyboardEvent(event: globalThis.KeyboardEvent, down: boolean, forceKey = false) {
+    if (!keyboardAllowed()) { resetKeyboardBuffer(); return; }
+    if (composingRef.current || event.isComposing || event.keyCode === 229 || PHYSICAL_MODIFIER_CODES.has(event.code)) return;
     const modifiers = currentModifiers(event);
     const hasCommandModifier = modifiers.some((modifier) => modifier !== "shift");
+    if (down && !hasCommandModifier && !stickyModifiers.has("shift") &&
+        (Array.from(event.key).length === 1 || ["Enter", "Backspace", "Delete"].includes(event.key))) {
+      beginKeyboardEdit();
+    }
     const key = SPECIAL_KEYS.has(event.key) ? event.key : event.code;
     if (!WIRE_KEYS.has(key)) return;
     if (!down) {
@@ -386,9 +467,9 @@ export function RemoteConsole(props: RemoteConsoleProps) {
       connection.sendReliable({ type: "key", key, down: false, modifiers });
       return;
     }
-    if (!hasCommandModifier && !stickyModifiers.has("shift")) {
+    if (!forceKey && !hasCommandModifier && !stickyModifiers.has("shift")) {
       if (event.key === "Enter") return;
-      if ((event.key === "Backspace" || event.key === "Delete") && event.currentTarget.value.length > 0) return;
+      if ((event.key === "Backspace" || event.key === "Delete") && (keyboardRef.current?.value.length ?? 0) > 0) return;
     }
     if (!SPECIAL_KEYS.has(event.key) && !hasCommandModifier && !stickyModifiers.has("shift")) return;
     event.preventDefault();
@@ -400,18 +481,24 @@ export function RemoteConsole(props: RemoteConsoleProps) {
 
   function textInput(event: FormEvent<HTMLTextAreaElement>) {
     const nativeEvent = event.nativeEvent as InputEvent;
-    if (!authorized) { resetKeyboardBuffer(); return; }
+    if (!keyboardAllowed()) { resetKeyboardBuffer(); return; }
+    if (cancelledCompositionRef.current) { resetKeyboardBuffer(); return; }
     if (nativeEvent.isComposing || composingRef.current) return;
     synchronizeKeyboard(event.currentTarget.value);
   }
 
   function compositionEnd(event: CompositionEvent<HTMLTextAreaElement>) {
+    if (!keyboardAllowed() || compositionEpochRef.current !== keyboardEpochRef.current) {
+      cancelledCompositionRef.current = true;
+      resetKeyboardBuffer(); return;
+    }
     composingRef.current = false;
+    compositionEpochRef.current = null;
     synchronizeKeyboard(event.currentTarget.value);
   }
 
   function synchronizeKeyboard(value = keyboardRef.current?.value ?? "") {
-    if (!authorized) return;
+    if (!keyboardAllowed() || cancelledCompositionRef.current) return;
     const edit = remoteTextEdit(inputValueRef.current, value);
     for (let index = 0; index < edit.backspaces; index += 1) {
       connection.sendReliable({ type: "key", key: "Backspace", down: true, modifiers: [] });
@@ -423,13 +510,24 @@ export function RemoteConsole(props: RemoteConsoleProps) {
         connection.sendReliable({ type: "key", key: "Enter", down: false, modifiers: [] });
       } else connection.sendReliable({ type: "text", text });
     }
-    inputValueRef.current = edit.value;
+    const retained = keyboardOpen ? edit.value : keyboardBufferTail(edit.value);
+    inputValueRef.current = retained;
+    if (retained !== edit.value && keyboardRef.current) keyboardRef.current.value = retained;
   }
 
   function resetKeyboardBuffer() {
+    if (composingRef.current || compositionEpochRef.current !== null) cancelledCompositionRef.current = true;
+    keyboardEpochRef.current++;
+    compositionEpochRef.current = null;
     inputValueRef.current = "";
     composingRef.current = false;
     if (keyboardRef.current) keyboardRef.current.value = "";
+  }
+
+  function beginKeyboardEdit() {
+    // A cancelled IME can stage old DOM text before its trailing input event arrives.
+    if (cancelledCompositionRef.current) resetKeyboardBuffer();
+    cancelledCompositionRef.current = false;
   }
 
   function leaveKeyboard() {
@@ -448,6 +546,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
       else next.delete(modifier);
       return next;
     });
+    focusKeyboard();
   }
 
   function tapKey(key: string) {
@@ -456,6 +555,7 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     resetKeyboardBuffer();
     connection.sendReliable({ type: "key", key, down: true, modifiers: modifierList });
     connection.sendReliable({ type: "key", key, down: false, modifiers: modifierList });
+    focusKeyboard();
   }
 
   function releaseAll() {
@@ -463,17 +563,34 @@ export function RemoteConsole(props: RemoteConsoleProps) {
     resetKeyboardBuffer();
     forwardedKeysRef.current.clear();
     setStickyModifiers(new Set());
+    focusKeyboard();
   }
 
   async function toggleFullscreen() {
-    if (!stageRef.current) return;
+    if (!shellRef.current) return;
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await stageRef.current.requestFullscreen();
+    else await shellRef.current.requestFullscreen();
+    focusKeyboard();
   }
 
   return (
-    <main className="remote-shell">
-      <header className="remote-header">
+    <main className="remote-shell" ref={shellRef} data-testid="remote-console">
+      <div className={`session-chrome ${sessionControlsOpen ? "is-open" : ""}`}
+        onPointerEnter={event => { if (event.buttons === 0) { headerHoveredRef.current = true; setSessionControlsOpen(true); } }}
+        onPointerLeave={event => {
+          headerHoveredRef.current = false;
+          if (!event.currentTarget.contains(document.activeElement)) setSessionControlsOpen(false);
+        }}
+        onFocusCapture={() => setSessionControlsOpen(true)}
+        onBlurCapture={event => {
+          if (!headerHoveredRef.current && !event.currentTarget.contains(event.relatedTarget as Node | null)) setSessionControlsOpen(false);
+        }}>
+      <button className="chrome-handle top-handle" title={sessionControlsOpen ? "Hide session controls" : "Show session controls"}
+        aria-label={sessionControlsOpen ? "Hide session controls" : "Show session controls"}
+        aria-expanded={sessionControlsOpen} onClick={() => { setSessionControlsOpen(open => !open); focusKeyboard(); }}>
+        {sessionControlsOpen ? <ChevronUp /> : <ChevronDown />}
+      </button>
+      <header className="remote-header" inert={!sessionControlsOpen}>
         <div className="brand compact">
           <span className="brand-mark" aria-hidden="true"><img src="/sync-icon.png" alt="" /></span>
           <strong>Sync</strong>
@@ -489,7 +606,30 @@ export function RemoteConsole(props: RemoteConsoleProps) {
           <button className="icon-button danger" title="End session" aria-label="End session" onClick={onEnd}><Power /></button>
           <button className="icon-button" title="Sign out" aria-label="Sign out" onClick={onLogout}><LogOut /></button>
         </div>
+        <div className="stage-controls">
+            {connection.supportsDisplays && (
+              <label className="display-picker" title="Display">
+                <Monitor />
+                <select aria-label="Display" value={displays.selectedDisplayId ?? ""} disabled={displays.busy || phase !== "connected"}
+                  onChange={event => connection.selectDisplay(event.target.value)}>
+                  {displays.displays.length === 0 && <option value="">Display</option>}
+                  {displays.displays.map(display => <option key={display.id} value={display.id}>{display.name}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="segmented icon-segmented" aria-label="Video fit">
+              <button className={fit === "fit" ? "active" : ""} title="Fit screen" aria-label="Fit screen" onClick={() => setFit("fit")}><Shrink /></button>
+              <button className={fit === "fill" ? "active" : ""} title="Fill screen" aria-label="Fill screen" onClick={() => setFit("fill")}><Maximize2 /></button>
+            </div>
+            {zoom > 1 && (
+              <button className="icon-button overlay" title="Reset zoom" aria-label="Reset zoom" onClick={() => setZoom(1)}><RotateCcw /></button>
+            )}
+            <button className="icon-button overlay" title={fullscreen ? "Exit fullscreen" : "Fullscreen"} aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void toggleFullscreen()}>
+              {fullscreen ? <Minimize2 /> : <Expand />}
+            </button>
+        </div>
       </header>
+      </div>
 
       <section className="remote-main">
         <div
@@ -522,32 +662,22 @@ export function RemoteConsole(props: RemoteConsoleProps) {
               {error && <span className="video-error">{error}</span>}
             </div>
           )}
-          <div className="stage-controls">
-            {connection.supportsDisplays && (
-              <label className="display-picker" title="Display">
-                <Monitor />
-                <select aria-label="Display" value={displays.selectedDisplayId ?? ""} disabled={displays.busy || phase !== "connected"}
-                  onChange={event => connection.selectDisplay(event.target.value)}>
-                  {displays.displays.length === 0 && <option value="">Display</option>}
-                  {displays.displays.map(display => <option key={display.id} value={display.id}>{display.name}</option>)}
-                </select>
-              </label>
-            )}
-            <div className="segmented icon-segmented" aria-label="Video fit">
-              <button className={fit === "fit" ? "active" : ""} title="Fit screen" aria-label="Fit screen" onClick={() => setFit("fit")}><Shrink /></button>
-              <button className={fit === "fill" ? "active" : ""} title="Fill screen" aria-label="Fill screen" onClick={() => setFit("fill")}><Maximize2 /></button>
-            </div>
-            {zoom > 1 && (
-              <button className="icon-button overlay" title="Reset zoom" aria-label="Reset zoom" onClick={() => setZoom(1)}><RotateCcw /></button>
-            )}
-            <button className="icon-button overlay" title={fullscreen ? "Exit fullscreen" : "Fullscreen"} aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void toggleFullscreen()}>
-              {fullscreen ? <Minimize2 /> : <Expand />}
-            </button>
-          </div>
           {displays.busy && <span className="display-status" role="status">Switching display</span>}
         </div>
 
-        <aside className="metrics-panel" aria-label="Connection metrics">
+      </section>
+
+      <div className={`details-edge-zone ${detailsOpen ? "is-open" : ""}`}>
+        <button className="icon-button chrome-handle details-handle"
+          title={detailsOpen ? "Hide connection details" : "Show connection details"}
+          aria-label={detailsOpen ? "Hide connection details" : "Show connection details"}
+          aria-expanded={detailsOpen} aria-controls="connection-details"
+          onClick={() => { setDetailsOpen(open => !open); focusKeyboard(); }}>
+          {detailsOpen ? <PanelRightClose /> : <PanelRightOpen />}
+        </button>
+      </div>
+      {detailsOpen && (
+        <aside id="connection-details" className="metrics-panel" aria-label="Connection metrics">
           <Metric label="RTT" value={formatMetric(metrics.roundTripMs, " ms")} />
           <Metric label="Video" value={metrics.resolution ?? "--"} />
           <Metric label="FPS" value={formatMetric(metrics.framesPerSecond)} />
@@ -555,10 +685,29 @@ export function RemoteConsole(props: RemoteConsoleProps) {
           <Metric label="Loss" value={formatMetric(metrics.packetsLost)} />
           <Metric label="Data RX" value={String(metrics.dataMessagesReceived)} testId="data-rx" />
         </aside>
-      </section>
+      )}
 
       {session.scope === "control" && (
-        <footer className="control-dock">
+        <div className={`dock-layer ${dockOpen || keyboardOpen ? "is-open" : ""}`}
+          onPointerEnter={event => { if (event.buttons === 0) { dockHoveredRef.current = true; setDockOpen(true); } }}
+          onPointerLeave={event => {
+            dockHoveredRef.current = false;
+            if (!keyboardOpen && (!event.currentTarget.contains(document.activeElement) || document.activeElement === keyboardRef.current)) setDockOpen(false);
+          }}
+          onFocusCapture={event => { if ((event.target as Element) !== keyboardRef.current || keyboardOpen) setDockOpen(true); }}
+          onBlurCapture={event => {
+            if (!dockHoveredRef.current && !keyboardOpen && (!event.currentTarget.contains(event.relatedTarget as Node | null) || event.relatedTarget === keyboardRef.current)) setDockOpen(false);
+          }}>
+        <button className="chrome-handle bottom-handle" title={dockOpen || keyboardOpen ? "Hide keyboard controls" : "Show keyboard controls"}
+          aria-label={dockOpen || keyboardOpen ? "Hide keyboard controls" : "Show keyboard controls"}
+          aria-expanded={dockOpen || keyboardOpen}
+          onClick={() => {
+            if (dockOpen || keyboardOpen) { leaveKeyboard(); setKeyboardOpen(false); focusKeyboard(); setDockOpen(false); }
+            else setDockOpen(true);
+          }}>
+          {dockOpen || keyboardOpen ? <ChevronDown /> : <ChevronUp />}
+        </button>
+        <footer className="control-dock" inert={!dockOpen && !keyboardOpen}>
           <div className="control-state">
             <MousePointer2 />
             <span>{authorized ? "Input active" : "Input locked"}</span>
@@ -585,10 +734,10 @@ export function RemoteConsole(props: RemoteConsoleProps) {
           </div>
           <div className="dock-actions">
             <button className="icon-button" title="Release all keys" aria-label="Release all keys" disabled={!authorized} onClick={releaseAll}><RotateCcw /></button>
-            <button className={`icon-button ${keyboardOpen ? "active" : ""}`} title="Keyboard" aria-label="Keyboard" disabled={!authorized} onClick={() => { if (keyboardOpen) leaveKeyboard(); setKeyboardOpen((open) => !open); }}><Keyboard /></button>
+            <button className={`icon-button ${keyboardOpen ? "active" : ""}`} title="Keyboard" aria-label="Keyboard" disabled={!authorized} onClick={() => { if (keyboardOpen) leaveKeyboard(); setKeyboardOpen((open) => !open); focusKeyboard(); }}><Keyboard /></button>
           </div>
-          {keyboardOpen && (
-            <label className="text-entry">
+        </footer>
+            <label className={keyboardOpen ? "text-entry" : "keyboard-capture"}>
               <textarea
                 ref={keyboardRef}
                 rows={1}
@@ -596,19 +745,26 @@ export function RemoteConsole(props: RemoteConsoleProps) {
                 autoCorrect="off"
                 spellCheck={false}
                 aria-label="Remote text input"
+                disabled={!authorized}
+                tabIndex={keyboardOpen ? 0 : -1}
                 onCompositionStart={() => {
-                  composingRef.current = true;
+                  if (keyboardAllowed()) {
+                    beginKeyboardEdit();
+                    composingRef.current = true;
+                    compositionEpochRef.current = keyboardEpochRef.current;
+                  } else resetKeyboardBuffer();
                 }}
                 onCompositionEnd={compositionEnd}
+                onPaste={() => { if (keyboardAllowed()) beginKeyboardEdit(); }}
+                onDrop={() => { if (keyboardAllowed()) beginKeyboardEdit(); }}
                 onInput={textInput}
                 onBlur={leaveKeyboard}
-                onKeyDown={(event) => keyboardEvent(event, true)}
-                onKeyUp={(event) => keyboardEvent(event, false)}
+                onKeyDown={(event) => keyboardEvent(event.nativeEvent, true)}
+                onKeyUp={(event) => keyboardEvent(event.nativeEvent, false)}
               />
-              <Send />
+              {keyboardOpen && <Send />}
             </label>
-          )}
-        </footer>
+        </div>
       )}
     </main>
   );

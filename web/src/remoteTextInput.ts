@@ -1,5 +1,11 @@
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
+export function keyboardBufferTail(value: string): string {
+  if (value.length <= 4096) return value;
+  const tail = Array.from(graphemes.segment(value), part => part.segment).slice(-256).join("");
+  return tail.length <= 4096 ? tail : "";
+}
+
 export function remoteTextEdit(previous: string, next: string) {
   const value = next.replaceAll("\u00a0", " ");
   const before = Array.from(graphemes.segment(previous), (part) => part.segment);
